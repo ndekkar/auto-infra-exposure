@@ -1,22 +1,29 @@
+# --- Global Inputs ---
 aoi_shapefile: "data/aoi.shp"
 power_points_shapefile: "data/power_points.shp"
 power_lines_shapefile: "data/power_lines.shp"
-
-hazards:
-  FLOOD:
-    active: true
-    raster: "data/flood.tif"
-    threshold: 0.0
-
-  LANDSLIDE:
-    active: false
-    raster: "data/"
-    threshold: 15.0
-
-  FIRE:
-    active: false
-    raster: "data/"
-    threshold: 0.5
-
 sample_points_per_line: 10
 output_dir: "output"
+
+# --- Hazard Layers ---
+hazards:
+  pluvial_flood:
+    active: true
+    raster: data/plu.tif
+    threshold: 0.1
+
+  fluvial_flood:
+    active: true
+    raster: data/flu.tif
+    threshold: 0.2
+
+  landslide:
+    active: false
+    raster: data/landslide.tif
+    threshold: 0.3
+
+  wildfire:
+    active: false
+    raster: data/wildfire.tif
+    threshold: 0.15
+
