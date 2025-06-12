@@ -8,12 +8,12 @@ output_dir: "output"
 # --- Hazard Layers ---
 hazards:
   pluvial_flood:
-    active: true
+    active: false
     raster: data/plu.tif
     threshold: 0.1
 
   fluvial_flood:
-    active: true
+    active: false
     raster: data/flu.tif
     threshold: 0.2
 
@@ -22,8 +22,8 @@ hazards:
     raster: data/landslide.tif
     threshold: 0.3
 
-  wildfire:
-    active: false
-    raster: data/wildfire.tif
+  earthquick:
+    active: true
+    raster: data/seismic.tif
     threshold: 0.15
 

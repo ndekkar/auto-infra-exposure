@@ -79,7 +79,7 @@ def extract_values_to_points(points_gdf, raster, threshold=0.0):
         except:
             val = None
         values.append(val)
-    points_gdf["haz_val"] = values  # shortened for shapefile safety
+    points_gdf["haz_val"] = values
     points_gdf["exposed"] = points_gdf["haz_val"].apply(
         lambda x: x is not None and x > threshold
     )
@@ -120,15 +120,15 @@ def combine_rasters(raster_paths, output_path, method='max'):
     with rasterio.open(output_path, 'w', **meta) as dst:
         dst.write(data, 1)
     
-    print(f"Combined raster written to: {output_path}")
+    print(f"✅ Combined raster written to: {output_path}")
 
-# ---------------- SAFE PLOTTING ----------------
+# ---------------- SAFE PLOTTING AND SAVING ----------------
 
 def safe_plot(gdf, ax, **kwargs):
     if not gdf.empty:
         gdf.plot(ax=ax, **kwargs)
 
-def plot_exposure_map(aoi, points, lines, hazard_name):
+def plot_and_save_exposure_map(aoi, points, lines, hazard_name, output_dir):
     fig, ax = plt.subplots(figsize=(12, 12))
     aoi.boundary.plot(ax=ax, color="black", linewidth=1)
     safe_plot(lines[~lines["exposed"]], ax, color="gray", label="Lines not exposed")
@@ -138,7 +138,12 @@ def plot_exposure_map(aoi, points, lines, hazard_name):
     ctx.add_basemap(ax, crs=aoi.crs.to_string())
     plt.legend()
     plt.title(f"{hazard_name.replace('_',' ').title()} Exposure")
+
+    output_path = os.path.join(output_dir, f"exposure_map_{hazard_name}.png")
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.show()
+    plt.close()
+
 
 # ---------------- FULL AUTOMATIC ENGINE ----------------
 
@@ -179,7 +184,7 @@ def run_multi_hazard_pipeline(config_path):
         lines_out = f"{config['output_dir']}/lines_exposure_{hazard_name}.shp"
         lines_hazard.to_file(lines_out)
 
-        plot_exposure_map(aoi, points_hazard, lines_hazard, hazard_name)
+        plot_and_save_exposure_map(aoi, points_hazard, lines_hazard, hazard_name, config["output_dir"])
 
     if "pluvial_flood" in hazard_rasters and "fluvial_flood" in hazard_rasters:
         print("\n--- Processing combined flood ---")
@@ -202,4 +207,4 @@ def run_multi_hazard_pipeline(config_path):
         lines_out = f"{config['output_dir']}/lines_exposure_combined_flood.shp"
         lines_combined.to_file(lines_out)
 
-        plot_exposure_map(aoi, points_combined, lines_combined, "combined_flood")
+        plot_and_save_exposure_map(aoi, points_combined, lines_combined, "combined_flood", config["output_dir"])
