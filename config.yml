@@ -10,12 +10,12 @@ hazards:
   pluvial_flood:
     active: false
     raster: data/plu.tif
-    threshold: 0.1
+    threshold: 4
 
   fluvial_flood:
     active: false
     raster: data/flu.tif
-    threshold: 0.2
+    threshold: 6
 
   landslide:
     active: false
@@ -23,7 +23,17 @@ hazards:
     threshold: 0.3
 
   earthquick:
-    active: true
+    active: false
     raster: data/seismic.tif
     threshold: 0.15
 
+  wildfire:
+    active: false
+    input_dir: data/wildfire_shapefiles
+
+  drought:
+    active: true
+    start_year: 2022
+    start_month: 6
+    end_year: 2023
+    end_month: 8
