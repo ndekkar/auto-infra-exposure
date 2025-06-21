@@ -6,12 +6,16 @@ import matplotlib.pyplot as plt
 import contextily as ctx
 import os
 import pandas as pd
-from shapely.geometry import Point
-from rasterio.warp import calculate_default_transform, reproject, Resampling
+import xarray as xr
+import seaborn as sns
+import datetime
 import geemap
 import ee
-import datetime
+from shapely.geometry import Point
+from rasterio.warp import calculate_default_transform, reproject, Resampling
 import rasterio.plot
+import pymannkendall as mk
+from statsmodels.nonparametric.smoothers_lowess import lowess
 
 # ---------------- CONFIG LOADER ----------------
 def load_config(path):
@@ -147,16 +151,13 @@ def plot_and_save_exposure_map(aoi, points, lines, hazard_name, output_dir):
 def generate_drought_index(aoi_path, output_dir, drought_conf):
     ee.Initialize()
 
-    # Dates
     start = datetime.datetime(drought_conf["start_year"], drought_conf["start_month"], 1)
     end = datetime.datetime(drought_conf["end_year"], drought_conf["end_month"], 28)
 
-    # AOI
     aoi = gpd.read_file(aoi_path).to_crs(epsg=4326)
     bounds = aoi.total_bounds
     geom = ee.Geometry.BBox(*bounds)
 
-    # Utilisation de MODIS/061/MOD13Q1 et calcul NDMI
     collection = ee.ImageCollection("MODIS/061/MOD13Q1") \
         .filterDate(start, end) \
         .map(lambda img: img.normalizedDifference(['sur_refl_b02', 'sur_refl_b07']).rename('NDMI'))
@@ -168,43 +169,70 @@ def generate_drought_index(aoi_path, output_dir, drought_conf):
     geemap.ee_export_image(mean_image, filename=out_path, scale=scale, region=geom)
     print(f"✅ Exported drought index raster to: {out_path}")
 
-    # --- Affichage avec symbologie continue ---
-    try:
-        with rasterio.open(out_path) as src:
-            fig, ax = plt.subplots(figsize=(12, 10))
-            rasterio.plot.show(src, ax=ax, cmap='RdYlGn', vmin=-1, vmax=1)
+# ---------------- HEAT ANALYSIS ----------------
+def process_heat_from_netcdf(nc_path, output_dir):
+    variable = "t2m"
+    convert_kelvin = True
+    ds = xr.open_dataset(nc_path)
+    data = ds[variable]
 
-            from mpl_toolkits.axes_grid1 import make_axes_locatable
-            import matplotlib.colors as colors
+    if convert_kelvin:
+        data = data - 273.15
 
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="5%", pad=0.1)
-            norm = colors.Normalize(vmin=-1, vmax=1)
-            sm = plt.cm.ScalarMappable(cmap='RdYlGn', norm=norm)
-            sm.set_array([])
-            fig.colorbar(sm, cax=cax, label="NDMI")
+    df = data.to_dataframe().reset_index()
+    df['date'] = pd.to_datetime(df['valid_time']).dt.date
+    daily_max = df.groupby('date')[variable].max().reset_index()
+    daily_max.columns = ['date', 'Tmax']
+    daily_max['Year'] = pd.to_datetime(daily_max['date']).dt.year
 
-            plt.title("Drought Index (NDMI)")
-            plt.axis('off')
-            plt.tight_layout()
+    annual_stats = daily_max.groupby('Year').agg(
+        Tmax=('Tmax', 'max'),
+        HotD=('Tmax', lambda x: (x >= 29).sum())
+    ).reset_index()
+    annual_stats = annual_stats[annual_stats['Year'] >= 1960]
 
-            map_path = os.path.join(output_dir, "drought_map_ndmi.png")
-            plt.savefig(map_path, dpi=300)
-            plt.show() 
-            print(f"✅ NDMI map saved to: {map_path}")
-            plt.close()
+    annual_stats.to_csv(os.path.join(output_dir, 'annual_tmax_stats.csv'), index=False)
 
-    except Exception as e:
-        print(f"❌ Unable to plot drought map: {e}")
+    plt.figure(figsize=(12, 8))
+    sns.scatterplot(data=annual_stats, x='Year', y='Tmax', color="black", label="Annual Tmax")
+    sns.regplot(data=annual_stats, x='Year', y='Tmax', lowess=True, scatter=False,
+                label="Local fit (25-year window)", line_kws={"color": "blue"})
+    lowess_12 = lowess(annual_stats['Tmax'], annual_stats['Year'], frac=0.3)
+    plt.plot(lowess_12[:, 0], lowess_12[:, 1], color="red", label="Local fit (12-year window)")
+    plt.title("Time series of annual maximum daily temperature", fontsize=20, fontweight="bold")
+    plt.xlabel("Year", fontsize=20, fontweight="bold")
+    plt.ylabel("Tmax (°C)", fontsize=20, fontweight="bold")
+    plt.legend()
+    plt.savefig(os.path.join(output_dir, 'Tmax2.png'))
+    plt.close()
+
+    plt.figure(figsize=(12, 8))
+    sns.scatterplot(data=annual_stats, x='Year', y='HotD', color="black", label="Hot Days")
+    sns.regplot(data=annual_stats, x='Year', y='HotD', lowess=True, scatter=False,
+                label="Local fit (25-year window)", line_kws={"color": "blue"})
+    lowess_hd = lowess(annual_stats['HotD'], annual_stats['Year'], frac=0.3)
+    plt.plot(lowess_hd[:, 0], lowess_hd[:, 1], color="red", label="Local fit (12-year window)")
+    plt.title("Annual number of days with Tmax ≥ 29°C", fontsize=20, fontweight="bold")
+    plt.xlabel("Year", fontsize=20, fontweight="bold")
+    plt.ylabel("", fontsize=20, fontweight="bold")
+    plt.legend()
+    plt.savefig(os.path.join(output_dir, 'HotD2.png'))
+    plt.close()
+
+    print("Mann-Kendall test results:")
+    print("Tmax:", mk.original_test(annual_stats['Tmax']))
+    print("HotD:", mk.original_test(annual_stats['HotD']))
 
 # ---------------- MAIN PIPELINE ----------------
 def run_multi_hazard_pipeline(config_path):
     config = load_config(config_path)
 
-    aoi = gpd.read_file(config["aoi_shapefile"])
+    aoi = gpd.read_file(config["aoi"])
     aoi_union = aoi.union_all()
-    points = gpd.read_file(config["power_points_shapefile"])
-    lines = gpd.read_file(config["power_lines_shapefile"])
+    points = gpd.read_file(config["infra_points_input"])
+    lines = gpd.read_file(config["infra_lines_input"])
+
+    sample_points_per_line = 10
 
     points, lines = harmonize_crs([points, lines], aoi.crs)
     points = points[points.geometry.within(aoi_union)]
@@ -214,17 +242,23 @@ def run_multi_hazard_pipeline(config_path):
         drought_conf = config["hazards"]["drought"]
         if drought_conf.get("active", False):
             print("\n--- Processing drought index (NDMI) ---")
-            generate_drought_index(config["aoi_shapefile"], config["output_dir"], drought_conf)
+            generate_drought_index(config["aoi"], config["output_dir"], drought_conf)
+
+    if "heat" in config["hazards"]:
+        heat_conf = config["hazards"]["heat"]
+        if heat_conf.get("active", False):
+            print("\n--- Processing heat (NetCDF Tmax analysis) ---")
+            process_heat_from_netcdf(heat_conf["input"], config["output_dir"])
 
     hazard_rasters = {}
 
     for hazard_name, hazard_conf in config["hazards"].items():
-        if not hazard_conf.get("active", False) or hazard_name == "drought":
+        if not hazard_conf.get("active", False) or hazard_name in ["drought", "heat"]:
             print(f"Skipping hazard: {hazard_name}")
             continue
 
         print(f"\n--- Processing hazard: {hazard_name} ---")
-        raster_path_wgs84 = assign_or_reproject_to_wgs84(hazard_conf["raster"])
+        raster_path_wgs84 = assign_or_reproject_to_wgs84(hazard_conf["input"])
         raster = rasterio.open(raster_path_wgs84)
         threshold = hazard_conf["threshold"]
 
@@ -236,7 +270,7 @@ def run_multi_hazard_pipeline(config_path):
 
         lines_hazard = lines.copy()
         lines_hazard["exposed"] = lines_hazard["geometry"].apply(
-            lambda geom: check_line_exposure(geom, raster, config["sample_points_per_line"], threshold)
+            lambda geom: check_line_exposure(geom, raster, sample_points_per_line, threshold)
         )
         lines_out = f"{config['output_dir']}/lines_exposure_{hazard_name}.shp"
         lines_hazard.to_file(lines_out)
@@ -254,14 +288,12 @@ def run_multi_hazard_pipeline(config_path):
         combined_threshold = max(pluvial_threshold, fluvial_threshold)
 
         points_combined = extract_values_to_points(points, combined_raster, combined_threshold)
-        points_out = f"{config['output_dir']}/points_exposure_combined_flood.shp"
-        points_combined.to_file(points_out)
+        points_combined.to_file(f"{config['output_dir']}/points_exposure_combined_flood.shp")
 
         lines_combined = lines.copy()
         lines_combined["exposed"] = lines_combined["geometry"].apply(
-            lambda geom: check_line_exposure(geom, combined_raster, config["sample_points_per_line"], combined_threshold)
+            lambda geom: check_line_exposure(geom, combined_raster, sample_points_per_line, combined_threshold)
         )
-        lines_out = f"{config['output_dir']}/lines_exposure_combined_flood.shp"
-        lines_combined.to_file(lines_out)
+        lines_combined.to_file(f"{config['output_dir']}/lines_exposure_combined_flood.shp")
 
         plot_and_save_exposure_map(aoi, points_combined, lines_combined, "combined_flood", config["output_dir"])

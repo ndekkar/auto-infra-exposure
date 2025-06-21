@@ -1,39 +1,53 @@
-# --- Global Inputs ---
-aoi_shapefile: "data/aoi.shp"
-power_points_shapefile: "data/power_points.shp"
-power_lines_shapefile: "data/power_lines.shp"
-sample_points_per_line: 10
+# === Global Configuration ===
+
+# Path to the Area of Interest (AOI) shapefile
+aoi: "data/aoi.shp"
+
+# Path to infrastructure points (e.g. substations, power plants)
+infra_points_input: "data/power_points.shp"
+
+# Path to infrastructure lines (e.g. power lines)
+infra_lines_input: "data/power_lines.shp"
+
+# Directory where all outputs will be saved
 output_dir: "output"
 
-# --- Hazard Layers ---
+
+# === Hazard Layers Configuration ===
+
 hazards:
+
   pluvial_flood:
-    active: false
-    raster: data/plu.tif
-    threshold: 4
+    active: true
+    input: "data/plu.tif"        # Raster input for pluvial flood
+    threshold: 4                 # Threshold value for exposure
 
   fluvial_flood:
     active: false
-    raster: data/flu.tif
+    input: "data/flu.tif"        # Raster input for fluvial flood
     threshold: 6
 
   landslide:
     active: false
-    raster: data/landslide.tif
+    input: "data/landslide.tif"  # Raster input for landslide
     threshold: 0.3
 
   earthquick:
     active: false
-    raster: data/seismic.tif
+    input: "data/seismic.tif"    # Raster input for seismic hazard
     threshold: 0.15
 
   wildfire:
     active: false
-    input_dir: data/wildfire_shapefiles
+    input: "data/wildfire_shapefiles"  # Directory containing wildfire shapefiles
 
   drought:
-    active: true
-    start_year: 2022
-    start_month: 6
-    end_year: 2023
-    end_month: 8
+    active: false
+    start_year: 2022     # Start year for drought analysis
+    start_month: 6       # Start month (1–12)
+    end_year: 2023       # End year for drought analysis
+    end_month: 8         # End month (1–12)
+
+  heat:
+    active: false
+    input: "data/heat.nc"  # NetCDF file for heat hazard (e.g. Tmax)
