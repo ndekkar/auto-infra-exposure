@@ -20,14 +20,14 @@ This project implements a multi-hazard exposure assessment pipeline for critical
 
 ## Supported Hazards
 
--Fluvial Flood
--Pluvial Flood
--Combined Flood
--Landslide
--Earthquake
--Drought (NDMI from MODIS)
--Heat (ERA5 Tmax NetCDF)
--Wildfire (centroid density from GlobFire)
+- Fluvial Flood
+- Pluvial Flood
+- Combined Flood
+- Landslide
+- Earthquake
+- Drought (NDMI from MODIS)
+- Heat (ERA5 Tmax NetCDF)
+- Wildfire (centroid density from GlobFire)
 
 ## Installation
 ### 1. Clone the repository
