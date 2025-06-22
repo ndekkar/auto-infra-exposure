@@ -25,9 +25,9 @@ This project implements a multi-hazard exposure assessment pipeline for critical
 - Combined Flood
 - Landslide
 - Earthquake
-- Drought (NDMI from MODIS)
-- Heat (ERA5 Tmax NetCDF)
-- Wildfire (centroid density from GlobFire)
+- Drought 
+- Heat 
+- Wildfire
 
 ## Installation
 ### 1. Clone the repository
