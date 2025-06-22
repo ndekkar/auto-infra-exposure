@@ -1,3 +1,15 @@
+"""
+Module for processing wildfire hazard using GlobFire burned area data.
+
+This module extracts wildfire centroids from shapefiles within an Area of Interest (AOI)
+and generates a kernel density estimate (KDE) heatmap of wildfire occurrence.
+
+Functions:
+- process_wildfire: Main entry point to control wildfire hazard processing.
+- extract_burned_area_centroids: Reads and filters GlobFire shapefiles to extract burned area centroids.
+- plot_fire_density: Generates and saves a KDE heatmap of wildfire centroids.
+"""
+
 import os
 import geopandas as gpd
 import pandas as pd
@@ -8,7 +20,10 @@ import contextily as ctx
 
 def process_wildfire(config):
     """
-    Extract burned area centroids and generate a wildfire density map.
+    Process wildfire hazard using burned area shapefiles and generate a density map.
+
+    Parameters:
+    - config (dict): Configuration dictionary loaded from YAML.
     """
     if "wildfire" in config["hazards"]:
         wildfire_conf = config["hazards"]["wildfire"]
@@ -27,6 +42,11 @@ def process_wildfire(config):
 def extract_burned_area_centroids(aoi_path, globfire_dir, output_path):
     """
     Extract centroids of burned areas from GlobFire shapefiles within AOI.
+
+    Parameters:
+    - aoi_path (str): Path to the AOI shapefile.
+    - globfire_dir (str): Directory containing burned area shapefiles (GlobFire).
+    - output_path (str): Path where the extracted centroids will be saved as a GeoPackage.
     """
     aoi = gpd.read_file(aoi_path).to_crs(epsg=3857)
     aoi_buffered = aoi.buffer(10000)  # 10 km buffer
@@ -52,11 +72,14 @@ def extract_burned_area_centroids(aoi_path, globfire_dir, output_path):
 
     output_gdf = gpd.GeoDataFrame(geometry=all_points, crs='EPSG:4326')
     output_gdf.to_file(output_path, driver='GPKG', layer='burned_area_centroids')
-    print(f" Burned area centroids saved to: {output_path}")
 
 def plot_fire_density(gpkg_path, save_path=None):
     """
     Generate a KDE density heatmap of wildfire centroids.
+
+    Parameters:
+    - gpkg_path (str): Path to the GeoPackage file containing wildfire centroids.
+    - save_path (str, optional): Path to save the output PNG image. If None, displays it.
     """
     gdf = gpd.read_file(gpkg_path)
     gdf_web = gdf.to_crs(epsg=3857)

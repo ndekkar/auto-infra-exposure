@@ -1,3 +1,14 @@
+"""
+Module for computing exposure of infrastructure to raster-based hazards.
+
+This module processes each active raster hazard (excluding drought, heat, and wildfire),
+evaluates point and line exposure based on thresholds, and generates corresponding
+shapefiles and maps.
+
+Functions:
+- process_raster_exposures: Main function to handle exposure analysis for all applicable hazards.
+"""
+
 import os
 import rasterio
 import geopandas as gpd
@@ -7,8 +18,24 @@ from modules.crs_utils import assign_or_reproject_to_wgs84
 
 def process_raster_exposures(config, aoi, points, lines, sample_points_per_line):
     """
-    Process exposure of infrastructure to all standard raster-based hazards.
-    Returns a dictionary of hazard_name -> (raster_path_wgs84, threshold).
+    Process exposure of infrastructure (points and lines) to all standard raster-based hazards.
+
+    This function:
+    - Filters active raster hazards (excluding non-raster ones like drought, heat, wildfire)
+    - Ensures rasters are in WGS84
+    - Extracts exposure values for points and lines
+    - Saves exposure results to Shapefiles
+    - Generates and saves exposure maps
+
+    Parameters:
+        config (dict): Parsed YAML configuration.
+        aoi (GeoDataFrame): Area of interest.
+        points (GeoDataFrame): Infrastructure points.
+        lines (GeoDataFrame): Infrastructure lines.
+        sample_points_per_line (int): Number of interpolated points used per line for exposure check.
+
+    Returns:
+        dict: Dictionary mapping each hazard name to a tuple: (raster_path_wgs84, threshold)
     """
     hazard_rasters = {}
 

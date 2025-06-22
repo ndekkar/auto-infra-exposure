@@ -1,3 +1,13 @@
+"""
+Heat hazard analysis module.
+
+This module processes ERA5 Tmax data from NetCDF to compute:
+- Annual maximum daily temperature (Tmax)
+- Annual number of hot days (Tmax ≥ 29°C)
+
+It saves the statistics as CSV and generates plots with smoothing.
+"""
+
 import os
 import pandas as pd
 import numpy as np
@@ -9,7 +19,10 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 
 def process_heat(config):
     """
-    Wrapper to compute and plot annual Tmax and hot days from NetCDF.
+    Entry point to process heat hazard if activated in config.
+
+    Parameters:
+        config (dict): Full YAML configuration dictionary.
     """
     if "heat" in config["hazards"]:
         heat_conf = config["hazards"]["heat"]
@@ -18,12 +31,26 @@ def process_heat(config):
             process_heat_from_netcdf(heat_conf["input"], config["output_dir"])
 
 def process_heat_from_netcdf(nc_path, output_dir):
+    """
+    Process heat data from NetCDF file and generate statistics and plots.
+
+    Parameters:
+        nc_path (str): Path to the NetCDF file containing 2m temperature (t2m).
+        output_dir (str): Directory to save plots and output CSV.
+    """
     annual_stats = compute_heat_statistics(nc_path, convert_kelvin=True)
     plot_heat_statistics(annual_stats, output_dir)
 
 def compute_heat_statistics(nc_path, convert_kelvin=True):
     """
-    Extract annual Tmax and number of hot days (Tmax ≥ 29°C) from NetCDF.
+    Compute annual heat statistics from a NetCDF file.
+
+    Parameters:
+        nc_path (str): Path to NetCDF file containing ERA5 't2m' variable.
+        convert_kelvin (bool): If True, convert temperature from Kelvin to Celsius.
+
+    Returns:
+        DataFrame: Annual statistics with columns 'Year', 'Tmax', and 'HotD'.
     """
     variable = "t2m"
     ds = xr.open_dataset(nc_path)
@@ -48,7 +75,11 @@ def compute_heat_statistics(nc_path, convert_kelvin=True):
 
 def plot_heat_statistics(annual_stats, output_dir):
     """
-    Plot and save temperature statistics: Tmax and number of hot days.
+    Generate and save plots for annual Tmax and number of hot days.
+
+    Parameters:
+        annual_stats (DataFrame): Output from compute_heat_statistics().
+        output_dir (str): Directory to save PNG plots and CSV file.
     """
     annual_stats.to_csv(os.path.join(output_dir, 'annual_tmax_stats.csv'), index=False)
 

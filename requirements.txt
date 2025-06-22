@@ -1,0 +1,14 @@
+geopandas
+rasterio
+shapely
+matplotlib
+seaborn
+contextily
+xarray
+netCDF4
+statsmodels
+pandas
+numpy
+pyyaml
+earthengine-api
+geemap

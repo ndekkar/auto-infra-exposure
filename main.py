@@ -1,3 +1,16 @@
+"""
+Main script to run the multi-hazard exposure pipeline.
+
+This script loads the configuration, processes infrastructure and hazard data,
+and performs exposure analysis for various natural hazards, including:
+- Drought
+- Heat
+- Wildfire
+- Flood (pluvial, fluvial, and combined)
+- Earthquake
+- Landslide
+"""
+
 import sys
 from modules.config_utils import load_config
 from modules.crs_utils import harmonize_crs
@@ -9,6 +22,12 @@ from modules.wildfire_module import process_wildfire
 import geopandas as gpd
 
 def run_multi_hazard_pipeline(config_path):
+    """
+    Orchestrates the multi-hazard exposure analysis using the provided configuration.
+
+    Parameters:
+        config_path (str): Path to the YAML configuration file.
+    """
     # Load configuration
     config = load_config(config_path)
 

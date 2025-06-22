@@ -1,3 +1,10 @@
+"""
+Flood combination module.
+
+This module combines fluvial and pluvial flood rasters into a single raster using a specified method,
+then computes exposure for infrastructure points and lines, and generates output maps and shapefiles.
+"""
+
 import os
 import rasterio
 from modules.raster_exposure import extract_values_to_points, check_line_exposure
@@ -7,8 +14,15 @@ import numpy as np
 
 def combine_rasters(raster_paths, output_path, method='max'):
     """
-    Combines multiple rasters using the specified method: 'max', 'sum', or 'mean'.
-    Saves the result to output_path.
+    Combine multiple raster layers using a specified method.
+
+    Parameters:
+        raster_paths (list): List of paths to raster files to be combined.
+        output_path (str): Path where the combined raster will be saved.
+        method (str): Method for combination: 'max', 'sum', or 'mean'.
+
+    Raises:
+        ValueError: If an unsupported method is specified.
     """
     with rasterio.open(raster_paths[0]) as src_ref:
         meta = src_ref.meta.copy()
@@ -29,12 +43,25 @@ def combine_rasters(raster_paths, output_path, method='max'):
     with rasterio.open(output_path, 'w', **meta) as dst:
         dst.write(data, 1)
 
-    print(f"✅ Combined raster written to: {output_path}")
 
 
 def process_combined_flood(config, hazard_rasters, aoi, points, lines, sample_points_per_line):
     """
-    Combines pluvial and fluvial flood rasters, analyzes exposure, and generates outputs.
+    Process combined flood hazard by merging pluvial and fluvial flood rasters.
+
+    This function:
+    - Combines flood rasters (pluvial + fluvial) using the 'max' method.
+    - Computes exposure for points and lines.
+    - Saves exposed features as shapefiles.
+    - Generates a visualization map.
+
+    Parameters:
+        config (dict): Loaded YAML configuration.
+        hazard_rasters (dict): Dictionary with hazard names mapped to (path, threshold).
+        aoi (GeoDataFrame): Area of interest.
+        points (GeoDataFrame): Infrastructure points.
+        lines (GeoDataFrame): Infrastructure lines.
+        sample_points_per_line (int): Number of samples to interpolate per line.
     """
     if "pluvial_flood" in hazard_rasters and "fluvial_flood" in hazard_rasters:
         print("\n--- Processing combined flood ---")

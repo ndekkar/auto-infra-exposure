@@ -1,3 +1,12 @@
+"""
+Plotting utilities for visualizing hazard exposure maps.
+
+This module provides functions to:
+- Add raster overlays (continuous or discrete) with custom symbology.
+- Safely plot GeoDataFrames if not empty.
+- Generate and save infrastructure exposure maps with background basemap.
+"""
+
 import matplotlib.pyplot as plt
 import contextily as ctx
 import numpy as np
@@ -10,13 +19,29 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from .config_utils import get_hazard_display_spec
 
 def safe_plot(gdf, ax, **kwargs):
-    """Plot GeoDataFrame only if it’s not empty."""
+    """
+    Plot a GeoDataFrame only if it is not empty.
+
+    Parameters:
+        gdf (GeoDataFrame): Layer to plot.
+        ax (matplotlib.axes.Axes): Axes on which to plot.
+        kwargs: Additional keyword arguments passed to .plot().
+    """
     if not gdf.empty:
         gdf.plot(ax=ax, **kwargs)
 
 def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
     """
-    Add a stylized raster overlay to a Matplotlib axis.
+    Add a styled raster overlay to a Matplotlib axis.
+
+    Parameters:
+        ax (matplotlib.axes.Axes): Axis object to add raster to.
+        raster_path (str): Path to raster (.tif) file.
+        aoi (GeoDataFrame): Area of interest used to crop the raster.
+        hazard_name (str): Hazard name used to determine symbology.
+
+    Returns:
+        list: The extent [xmin, xmax, ymin, ymax] for setting plot limits.
     """
     spec = get_hazard_display_spec(hazard_name)
 
@@ -58,7 +83,15 @@ def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
 
 def plot_and_save_exposure_map(aoi, points, lines, hazard_name, output_dir, raster_path=None):
     """
-    Plot infrastructure exposure map with optional raster background.
+    Generate and save a map showing infrastructure exposure.
+
+    Parameters:
+        aoi (GeoDataFrame): Area of interest.
+        points (GeoDataFrame): Infrastructure points with exposure flag.
+        lines (GeoDataFrame): Infrastructure lines with exposure flag.
+        hazard_name (str): Name of the hazard being visualized.
+        output_dir (str): Directory where the PNG will be saved.
+        raster_path (str or None): Path to raster file to use as background.
     """
     fig, ax = plt.subplots(figsize=(12, 12))
     ctx.add_basemap(ax, crs=aoi.crs.to_string())

@@ -1,12 +1,32 @@
+"""
+Configuration utilities for the multi-hazard exposure pipeline.
+
+This module includes:
+- YAML configuration loading
+- Hazard-specific display specifications for plotting
+"""
+
 import yaml
 
 def load_config(path):
-    """Load YAML configuration from a file."""
+    """
+    Load a YAML configuration file.
+    Parameters:
+        path (str): Path to the YAML file.
+    Returns:
+        dict: Parsed configuration as a Python dictionary.
+    """
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
 def get_hazard_display_spec(hazard_name):
-    """Return plotting style and parameters for a given hazard."""
+    """
+    Get the plotting style and display settings for a specific hazard.
+    Parameters:
+        hazard_name (str): Name of the hazard (e.g. "earthquake", "landslide").
+    Returns:
+        dict: Plotting specification, including type, color map or palette, labels, and title.
+    """
     if hazard_name == "landslide":
         return {
             "type": "continuous",
