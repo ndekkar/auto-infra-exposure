@@ -8,13 +8,9 @@ This project implements a multi-hazard exposure assessment pipeline for critical
 ## Features
 
 - Multi-hazard exposure analysis (flood, landslide, earthquake, drought, wildfire, heat)
-- Raster and vector data processing
-- Reprojecting and harmonizing coordinate systems
-- Earth Engine integration for drought (NDMI)
-- NetCDF analysis for heatwave statistics
+- Configurable via a single YAML file
 - Infrastructure exposure for both point and line features
 - Automated map generation for each hazard
-- Configurable via a single YAML file
 
 ---
 
