@@ -1,53 +1,52 @@
 # === Global Configuration ===
 
 # Path to the Area of Interest (AOI) shapefile
-aoi: "data/aoi.shp"
+aoi: "../data/aoi.shp"
 
 # Path to infrastructure points (e.g. substations, power plants)
-infra_points_input: "data/power_points.shp"
+infra_points_input: "../data/power_points.shp"
 
 # Path to infrastructure lines (e.g. power lines)
-infra_lines_input: "data/power_lines.shp"
+infra_lines_input: "../data/power_lines.shp"
 
 # Directory where all outputs will be saved
-output_dir: "output"
+output_dir: "../output"
 
 
 # === Hazard Layers Configuration ===
-
 hazards:
 
   pluvial_flood:
     active: true
-    input: "data/plu.tif"        # Raster input for pluvial flood
+    input: "../data/plu.tif"        # Raster input for pluvial flood
     threshold: 4                 # Threshold value for exposure
 
   fluvial_flood:
-    active: false
-    input: "data/flu.tif"        # Raster input for fluvial flood
+    active: true
+    input: "../data/flu.tif"        # Raster input for fluvial flood
     threshold: 6
 
   landslide:
-    active: false
-    input: "data/landslide.tif"  # Raster input for landslide
+    active: true
+    input: "../data/landslide.tif"  # Raster input for landslide
     threshold: 0.3
 
-  earthquick:
-    active: false
-    input: "data/seismic.tif"    # Raster input for seismic hazard
-    threshold: 0.15
+  earthquake:
+    active: true
+    input: "../data/earthquacke.tif"    # Raster input for seismic hazard
+    threshold: 0.3
 
   wildfire:
-    active: false
-    input: "data/wildfire_shapefiles"  # Directory containing wildfire shapefiles
+    active: true
+    input: "/Users/nassimdekkar/Downloads/GLOBFIRE_burned_area_full_dataset_2002_2023"  # Directory containing wildfire shapefiles
 
   drought:
-    active: false
+    active: true
     start_year: 2022     # Start year for drought analysis
     start_month: 6       # Start month (1–12)
     end_year: 2023       # End year for drought analysis
     end_month: 8         # End month (1–12)
 
   heat:
-    active: false
-    input: "data/heat.nc"  # NetCDF file for heat hazard (e.g. Tmax)
+    active: true
+    input: "../data/heat.nc"  # NetCDF file for heat hazard (e.g. Tmax)

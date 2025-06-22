@@ -1,15 +1,7 @@
 data/
 output/
-
 # Ignore Python cache and temp files
 __pycache__/
 *.py[cod]
 *.ipynb_checkpoints
 .DS_Store
-
-# Ignore outputs and large data
-output/
-data/
-
-
-
