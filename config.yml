@@ -17,27 +17,27 @@ output_dir: "../output"
 hazards:
 
   pluvial_flood:
-    active: true
+    active: false
     input: "../data/plu.tif"        # Raster input for pluvial flood
     threshold: 4                 # Threshold value for exposure
 
   fluvial_flood:
-    active: true
+    active: false
     input: "../data/flu.tif"        # Raster input for fluvial flood
     threshold: 6
 
   landslide:
-    active: true
+    active: false
     input: "../data/landslide.tif"  # Raster input for landslide
     threshold: 0.3
 
   earthquake:
-    active: true
+    active: false
     input: "../data/earthquacke.tif"    # Raster input for seismic hazard
     threshold: 0.3
 
   wildfire:
-    active: true
+    active: false
     input: "/Users/nassimdekkar/Downloads/GLOBFIRE_burned_area_full_dataset_2002_2023"  # Directory containing wildfire shapefiles
 
   drought:
@@ -48,5 +48,5 @@ hazards:
     end_month: 8         # End month (1–12)
 
   heat:
-    active: true
+    active: false
     input: "../data/heat.nc"  # NetCDF file for heat hazard (e.g. Tmax)

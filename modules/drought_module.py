@@ -10,6 +10,7 @@ import rasterio
 import matplotlib.pyplot as plt
 import geemap
 import ee
+from rasterio.mask import mask
 
 def process_drought(config):
     """
@@ -35,7 +36,7 @@ def generate_drought_index(aoi_path, output_dir, drought_conf):
     """
     out_path = os.path.join(output_dir, "drought_index_ndmi.tif")
     fetch_ndmi_from_gee(aoi_path, drought_conf, out_path)
-    plot_ndmi_raster(out_path, output_dir)
+    plot_ndmi_raster(out_path, output_dir, aoi_path)
 
 def fetch_ndmi_from_gee(aoi_path, drought_conf, output_path):
     """
@@ -54,44 +55,58 @@ def fetch_ndmi_from_gee(aoi_path, drought_conf, output_path):
 
     # Convert AOI shapefile to Earth Engine geometry
     aoi = gpd.read_file(aoi_path).to_crs(epsg=4326)
-    bounds = aoi.total_bounds
-    geom = ee.Geometry.BBox(*bounds)
-
+    #bounds = aoi.total_bounds
+    #geom = ee.Geometry.BBox(*bounds)
+    #geom = geemap.geopandas_to_ee(gpd.GeoDataFrame(geometry=[aoi.unary_union], crs="EPSG:4326"))
+    ee_fc = geemap.geopandas_to_ee(aoi)
+    ee_geom = ee_fc.geometry()
+    
     # Build NDMI image collection from MODIS
     collection = ee.ImageCollection("MODIS/061/MOD13Q1") \
         .filterDate(start, end) \
         .map(lambda img: img.normalizedDifference(['sur_refl_b02', 'sur_refl_b07']).rename('NDMI'))
 
     # Export the mean NDMI image
-    mean_image = collection.select('NDMI').mean().clip(geom)
-    geemap.ee_export_image(mean_image, filename=output_path, scale=250, region=geom)
+    mean_image = collection.select('NDMI').mean().clip(ee_geom)
+    geemap.ee_export_image(mean_image, filename=output_path, scale=250, region=ee_geom)
 
-def plot_ndmi_raster(tif_path, output_dir):
+
+def plot_ndmi_raster(tif_path, output_dir, aoi_path):
     """
-    Plot the exported NDMI raster and save as a PNG.
+    Plot the exported NDMI raster, clipped visually to the AOI, and save as PNG.
 
     Parameters:
         tif_path (str): Path to the NDMI raster GeoTIFF.
         output_dir (str): Directory to save the plot.
+        aoi_path (str): Path to the AOI shapefile.
     """
     try:
         with rasterio.open(tif_path) as src:
-            data = src.read(1)
+            
+            aoi = gpd.read_file(aoi_path).to_crs(src.crs)
+            shapes = [feature["geometry"] for feature in aoi.__geo_interface__["features"]]
+
+            
+            data, transform = mask(src, shapes, crop=True)
+            data = data[0]  # extraire la première bande
+
+            
             vmin, vmax = np.nanmin(data), np.nanmax(data)
 
+            
             fig, ax = plt.subplots(figsize=(12, 10))
             im = ax.imshow(data, cmap='RdYlGn', vmin=vmin, vmax=vmax)
             ax.set_title("Drought Index (NDMI)")
             ax.axis('off')
 
-            # Add colorbar
+            # Colorbar
             cbar = fig.colorbar(im, ax=ax, orientation='vertical', shrink=0.6, pad=0.02, aspect=25)
             cbar.set_label("NDMI [-1 to 1]")
 
-            # Save plot
             plt.tight_layout()
             map_path = os.path.join(output_dir, "drought_map_ndmi.png")
             plt.savefig(map_path, dpi=300)
             plt.show()
+
     except Exception as e:
         print(f"Unable to plot drought map: {e}")
