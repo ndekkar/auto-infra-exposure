@@ -18,6 +18,7 @@ from matplotlib.cm import ScalarMappable
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from .config_utils import get_hazard_display_spec
 
+
 def safe_plot(gdf, ax, **kwargs):
     """
     Plot a GeoDataFrame only if it is not empty.
@@ -117,3 +118,35 @@ def plot_and_save_exposure_map(aoi, points, lines, hazard_name, output_dir, rast
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.show()
     plt.close()
+
+def plot_initial_map(aoi, points, lines, output_path=None):
+    """
+    Plot a basemap with AOI and energy network (points and lines).
+
+    Parameters:
+        aoi (GeoDataFrame): Area of interest.
+        points (GeoDataFrame): Infrastructure points.
+        lines (GeoDataFrame): Infrastructure lines.
+        output_path (str): Optional path to save the PNG file.
+    """
+    fig, ax = plt.subplots(figsize=(12, 10))
+
+    # Plot layers
+    aoi.boundary.plot(ax=ax, color='black', linewidth=1, label='AOI')
+    lines.plot(ax=ax, color='blue', linewidth=1, label='Lines')
+    points.plot(ax=ax, color='red', markersize=10, label='Points')
+
+    # Add basemap
+    try:
+        ctx.add_basemap(ax, crs=aoi.crs.to_string(), source=ctx.providers.CartoDB.Positron)
+    except Exception as e:
+        print(f"[!] Could not add basemap: {e}")
+
+    ax.set_title("Initial Map: Energy Infrastructure", fontsize=15, fontweight="bold")
+    ax.axis('off')
+    ax.legend()
+
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    else:
+        plt.show()

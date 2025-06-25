@@ -28,7 +28,6 @@ def process_wildfire(config):
     if "wildfire" in config["hazards"]:
         wildfire_conf = config["hazards"]["wildfire"]
         if wildfire_conf.get("active", False):
-            print("\n--- Processing wildfire hazard ---")
             centroids_path = os.path.join(config["output_dir"], "wildfire_centroids.gpkg")
             raster_path = os.path.join(config["output_dir"], "wildfire_centroids.tif")
             
@@ -153,6 +152,4 @@ def rasterize_fire_centroids(gpkg_path, output_tif_path, resolution=0.01):
         transform=transform
     ) as dst:
         dst.write(raster, 1)
-
-    print(f"[✓] Wildfire raster saved to: {output_tif_path}")
     return output_tif_path

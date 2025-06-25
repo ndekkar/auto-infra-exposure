@@ -11,15 +11,20 @@ and performs exposure analysis for various natural hazards, including:
 - Landslide
 """
 
+
+
+import os
 import sys
+import geopandas as gpd
 from modules.config_utils import load_config
 from modules.crs_utils import harmonize_crs
+from modules.plotting import plot_initial_map
 from modules.raster_exposure import process_raster_exposures
 from modules.flood_combination import process_combined_flood
 from modules.drought_module import process_drought
 from modules.heat_module import process_heat
 from modules.wildfire_module import process_wildfire
-import geopandas as gpd
+
 
 def run_multi_hazard_pipeline(config_path):
     """
@@ -43,6 +48,9 @@ def run_multi_hazard_pipeline(config_path):
     points = points[points.geometry.within(aoi_union)]
     lines = lines[lines.geometry.intersects(aoi_union)]
 
+    # ➕ Plot initial map
+    plot_initial_map(aoi, points, lines, output_path=os.path.join(config["output_dir"], "initial_context_map.png"))
+    
     # Process non-raster hazards
     process_drought(config)
     heat_raster_path = process_heat(config)

@@ -37,7 +37,7 @@ hazards:
     threshold: 0.3
 
   wildfire:
-    active: true
+    active: false
     input: "/Users/nassimdekkar/Downloads/GLOBFIRE_burned_area_full_dataset_2002_2023"  # Directory containing wildfire shapefiles
     threshold: 0.5
     
