@@ -32,7 +32,7 @@ hazards:
     threshold: 0.3
 
   earthquake:
-    active: false
+    active: true
     input: "../data/earthquacke.tif"    # Raster input for seismic hazard
     threshold: 0.3
 

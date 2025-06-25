@@ -46,20 +46,40 @@ def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
     """
     spec = get_hazard_display_spec(hazard_name)
 
+    # Read + mask to AOI, forcing nodata to NaN
     with rasterio.open(raster_path) as src:
         aoi_proj = aoi.to_crs(src.crs)
-        geometries = [feature["geometry"] for feature in aoi_proj.__geo_interface__["features"]]
-        out_image, out_transform = mask(src, geometries, crop=True)
-        out_image = out_image[0]
-        out_image = np.where(out_image == src.nodata, np.nan, out_image)
-        height, width = out_image.shape
-        bounds = rasterio.transform.array_bounds(height, width, out_transform)
-        extent = [bounds[0], bounds[2], bounds[1], bounds[3]]
+        geometries = [feat["geometry"] for feat in aoi_proj.__geo_interface__["features"]]
+        out_image, out_transform = mask(
+            src,
+            geometries,
+            crop=True,
+            nodata=np.nan,
+            filled=True
+        )
+        arr = out_image[0]  # single band
 
+    # Mask all invalid (nan) pixels
+    masked = np.ma.masked_invalid(arr)
+
+    # Compute extent for plotting
+    height, width = arr.shape
+    bounds = rasterio.transform.array_bounds(height, width, out_transform)
+    extent = [bounds[0], bounds[2], bounds[1], bounds[3]]
+
+    # Plot based on type
     if spec["type"] == "continuous":
-        vmin = np.nanmin(out_image)
-        vmax = np.nanmax(out_image)
-        im = ax.imshow(out_image, cmap=spec["cmap"], extent=extent, vmin=vmin, vmax=vmax, alpha=0.6)
+        vmin = masked.min()
+        vmax = masked.max()
+        im = ax.imshow(
+            masked,
+            cmap=spec["cmap"],
+            extent=extent,
+            vmin=vmin,
+            vmax=vmax,
+            alpha=0.6
+        )
+        # colorbar
         norm = Normalize(vmin=vmin, vmax=vmax)
         sm = ScalarMappable(cmap=spec["cmap"], norm=norm)
         divider = make_axes_locatable(ax)
@@ -69,11 +89,21 @@ def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
         cbar.set_ticks([vmin, vmax])
         cbar.set_ticklabels(['Low', 'High'])
 
-    elif spec["type"] == "discrete":
+    else:  # discrete
         cmap = ListedColormap(spec["palette"])
         norm = BoundaryNorm(spec["breaks"], len(spec["palette"]))
-        im = ax.imshow(out_image, cmap=cmap, norm=norm, extent=extent, origin='upper', alpha=0.6)
-        tick_pos = [(spec["breaks"][i] + spec["breaks"][i+1]) / 2 for i in range(len(spec["breaks"]) - 1)]
+        im = ax.imshow(
+            masked,
+            cmap=cmap,
+            norm=norm,
+            extent=extent,
+            origin='upper',
+            alpha=0.6
+        )
+        tick_pos = [
+            (spec["breaks"][i] + spec["breaks"][i+1]) / 2
+            for i in range(len(spec["breaks"]) - 1)
+        ]
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("right", size="3%", pad=0.1)
         cbar = plt.colorbar(im, cax=cax, ticks=tick_pos)
@@ -82,42 +112,102 @@ def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
 
     return extent
 
-def plot_and_save_exposure_map(aoi, points, lines, hazard_name, output_dir, raster_path=None):
+
+def plot_and_save_exposure_map(aoi, points, lines, hazard_name, output_dir, raster_path=None, resolution=300):
     """
-    Generate and save a map showing infrastructure exposure.
+    Generate and save an exposure map showing the AOI, energy infrastructure, and optional raster hazard.
+
+    The map includes:
+    - AOI boundary
+    - Infrastructure points and lines (colored by exposure)
+    - Hazard raster overlay if provided
+    - Background basemap (CartoDB Positron)
 
     Parameters:
-        aoi (GeoDataFrame): Area of interest.
-        points (GeoDataFrame): Infrastructure points with exposure flag.
-        lines (GeoDataFrame): Infrastructure lines with exposure flag.
-        hazard_name (str): Name of the hazard being visualized.
+        aoi (GeoDataFrame): Area of interest polygon.
+        points (GeoDataFrame): Infrastructure points with "exposed" column.
+        lines (GeoDataFrame): Infrastructure lines with "exposed" column.
+        hazard_name (str): Name of the hazard (used for labeling and symbology).
         output_dir (str): Directory where the PNG will be saved.
-        raster_path (str or None): Path to raster file to use as background.
+        raster_path (str, optional): Path to raster (.tif) file to overlay.
+        resolution (int): Resolution in DPI for the saved image.
     """
-    fig, ax = plt.subplots(figsize=(12, 12))
-    ctx.add_basemap(ax, crs=aoi.crs.to_string())
+    spec = get_hazard_display_spec(hazard_name)
+    xmin = ymin = xmax = ymax = None
+    masked = None  # masked raster array to display
 
+    # Step 1: Load and clip raster to AOI if provided
     if raster_path:
-        extent = add_raster_to_ax(ax, raster_path, aoi, hazard_name)
-        ax.set_xlim(extent[0], extent[1])
-        ax.set_ylim(extent[2], extent[3])
+        with rasterio.open(raster_path) as src:
+            geoms = [f["geometry"] for f in aoi.to_crs(src.crs).__geo_interface__["features"]]
+            arr, transform = mask(src, geoms, crop=True, nodata=np.nan, filled=True)
+            arr = arr[0]
+        masked = np.ma.masked_invalid(arr)
+        height, width = masked.shape
+        bounds = rasterio.transform.array_bounds(height, width, transform)
+        xmin, xmax, ymin, ymax = bounds[0], bounds[2], bounds[1], bounds[3]
+    else:
+        xmin, ymin, xmax, ymax = aoi.total_bounds
 
-    aoi.boundary.plot(ax=ax, color="black", linewidth=1)
-    safe_plot(lines[~lines["exposed"]], ax, color="gray", label="Lines not exposed")
-    safe_plot(lines[lines["exposed"]], ax, color="orange", label="Exposed lines")
-    safe_plot(points[~points["exposed"]], ax, color="green", markersize=10, label="Points not exposed")
-    safe_plot(points[points["exposed"]], ax, color="red", markersize=10, label="Exposed points")
+    # Step 2: Initialize the figure and set limits
+    fig, ax = plt.subplots(figsize=(12, 12))
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.set_xlim(min(xmin, xmax), max(xmin, xmax))
+    ax.set_ylim(min(ymin, ymax), max(ymin, ymax))
+    
+    # Step 3: Add basemap (under everything)
+    try:
+        ctx.add_basemap(ax, crs=aoi.crs.to_string(), source=ctx.providers.CartoDB.Positron, attribution_size=6, zorder=0)
+    except Exception as e:
+        print(f"[!] Could not add basemap: {e}")
 
-    ax.set_aspect('equal')
+    # Step 4: Plot raster above the basemap
+    if masked is not None:
+        if spec["type"] == "continuous":
+            vmin, vmax = float(masked.min()), float(masked.max())
+            im = ax.imshow(masked, cmap=spec["cmap"], extent=(xmin, xmax, ymin, ymax),
+                           vmin=vmin, vmax=vmax, alpha=0.6, zorder=1)
+            norm = Normalize(vmin=vmin, vmax=vmax)
+            sm = ScalarMappable(cmap=spec["cmap"], norm=norm)
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="3%", pad=0.1)
+            cbar = plt.colorbar(sm, cax=cax)
+            cbar.set_label(spec["label"])
+        else:
+            cmap = ListedColormap(spec["palette"])
+            norm = BoundaryNorm(spec["breaks"], len(spec["palette"]))
+            im = ax.imshow(masked, cmap=cmap, norm=norm,
+                           extent=(xmin, xmax, ymin, ymax), origin='upper',
+                           alpha=0.6, zorder=1)
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="3%", pad=0.1)
+            ticks = [(spec["breaks"][i] + spec["breaks"][i+1]) / 2 for i in range(len(spec["breaks"]) - 1)]
+            cbar = plt.colorbar(im, cax=cax, ticks=ticks)
+            cbar.ax.set_yticklabels(spec["labels"])
+            cbar.set_label(spec["label"])
+
+    # Step 5: Plot vector data above raster
+    aoi.boundary.plot(ax=ax, color="black", linewidth=1, zorder=2)
+    safe_plot(lines[~lines["exposed"]], ax, color="gray", label="Lines not exposed", zorder=3)
+    safe_plot(lines[lines["exposed"]], ax, color="orange", label="Exposed lines", zorder=4)
+    safe_plot(points[~points["exposed"]], ax, color="green", markersize=10, label="PTs not exposed", zorder=5)
+    safe_plot(points[points["exposed"]], ax, color="red", markersize=10, label="Exposed PTs", zorder=6)
+
+    # Step 6: Final formatting
+    ax.set_aspect("equal")
+    ax.set_title(f"{hazard_name.replace('_', ' ').title()} Exposure", fontsize=15, fontweight="bold")
+    ax.axis("off")
     handles, labels = ax.get_legend_handles_labels()
-    if handles and any(lbl for lbl in labels):
-        ax.legend()
-    ax.set_title(f"{hazard_name.replace('_',' ').title()} Exposure")
+    if handles:
+        ax.legend() 
 
+    # Step 7: Save the figure
     output_path = os.path.join(output_dir, f"exposure_map_{hazard_name}.png")
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.savefig(output_path, dpi=resolution, bbox_inches="tight")
     plt.show()
     plt.close()
+
 
 def plot_initial_map(aoi, points, lines, output_path=None):
     """
