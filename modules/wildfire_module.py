@@ -29,6 +29,9 @@ def process_wildfire(config):
         wildfire_conf = config["hazards"]["wildfire"]
         if wildfire_conf.get("active", False):
             print("\n--- Processing wildfire hazard ---")
+            centroids_path = os.path.join(config["output_dir"], "wildfire_centroids.gpkg")
+            raster_path = os.path.join(config["output_dir"], "wildfire_centroids.tif")
+            
             extract_burned_area_centroids(
                 aoi_path=config["aoi"],
                 globfire_dir=wildfire_conf["input"],
@@ -38,6 +41,7 @@ def process_wildfire(config):
                 gpkg_path=os.path.join(config["output_dir"], "wildfire_centroids.gpkg"),
                 save_path=os.path.join(config["output_dir"], "wildfire_density.png")
             )
+            return rasterize_fire_centroids(centroids_path, raster_path)
 
 def extract_burned_area_centroids(aoi_path, globfire_dir, output_path):
     """
@@ -105,3 +109,50 @@ def plot_fire_density(gpkg_path, save_path=None):
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
     else:
         plt.show()
+
+def rasterize_fire_centroids(gpkg_path, output_tif_path, resolution=0.01):
+    """
+    Rasterize centroid points from GeoPackage into a binary raster.
+
+    Parameters:
+        gpkg_path (str): Path to the GeoPackage with burned area centroids.
+        output_tif_path (str): Path to save the output raster.
+        resolution (float): Raster resolution in degrees.
+
+    Returns:
+        str: Path to the output .tif file.
+    """
+    import rasterio
+    from rasterio.features import rasterize
+    from rasterio.transform import from_origin
+
+    gdf = gpd.read_file(gpkg_path).to_crs("EPSG:4326")
+    minx, miny, maxx, maxy = gdf.total_bounds
+
+    width = int((maxx - minx) / resolution)
+    height = int((maxy - miny) / resolution)
+    transform = from_origin(minx, maxy, resolution, resolution)
+
+    shapes = [(geom, 1) for geom in gdf.geometry]
+    raster = rasterize(
+        shapes,
+        out_shape=(height, width),
+        transform=transform,
+        fill=0,
+        dtype="uint8"
+    )
+
+    with rasterio.open(
+        output_tif_path, "w",
+        driver="GTiff",
+        height=height,
+        width=width,
+        count=1,
+        dtype="uint8",
+        crs="EPSG:4326",
+        transform=transform
+    ) as dst:
+        dst.write(raster, 1)
+
+    print(f"[✓] Wildfire raster saved to: {output_tif_path}")
+    return output_tif_path

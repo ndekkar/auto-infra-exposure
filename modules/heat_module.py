@@ -30,7 +30,6 @@ def process_heat(config):
     if "heat" in config["hazards"]:
         heat_conf = config["hazards"]["heat"]
         if heat_conf.get("active", False):
-            print("\n--- Processing heat  ---")
             return process_heat_from_netcdf(heat_conf["input"], config["output_dir"], config["aoi"])
 
 def process_heat_from_netcdf(nc_path, output_dir, aoi_path):

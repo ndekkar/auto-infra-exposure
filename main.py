@@ -47,8 +47,10 @@ def run_multi_hazard_pipeline(config_path):
     process_drought(config)
     heat_raster_path = process_heat(config)
     config["hazards"]["heat"]["input"] = heat_raster_path
-    process_wildfire(config)
-
+    
+    wildfire_raster_path = process_wildfire(config)
+    config["hazards"]["wildfire"]["input"] = wildfire_raster_path
+    
     # Process standard raster-based hazards
     hazard_rasters = process_raster_exposures(config, aoi, points, lines, sample_points_per_line)
 
