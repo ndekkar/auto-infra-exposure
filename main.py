@@ -45,7 +45,8 @@ def run_multi_hazard_pipeline(config_path):
 
     # Process non-raster hazards
     process_drought(config)
-    process_heat(config)
+    heat_raster_path = process_heat(config)
+    config["hazards"]["heat"]["input"] = heat_raster_path
     process_wildfire(config)
 
     # Process standard raster-based hazards

@@ -40,7 +40,7 @@ def process_raster_exposures(config, aoi, points, lines, sample_points_per_line)
     hazard_rasters = {}
 
     for hazard_name, hazard_conf in config["hazards"].items():
-        if not hazard_conf.get("active", False) or hazard_name in ["drought", "heat", "wildfire"]:
+        if not hazard_conf.get("active", False) or hazard_name in ["drought", "wildfire"]:
             continue
 
         print(f"\n--- Processing hazard: {hazard_name} ---")

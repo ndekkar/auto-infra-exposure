@@ -10,12 +10,15 @@ It saves the statistics as CSV and generates plots with smoothing.
 
 import os
 import pandas as pd
+import geopandas as gpd
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
 import seaborn as sns
+import rioxarray 
 from IPython.display import Image, display
 from statsmodels.nonparametric.smoothers_lowess import lowess
+
 
 def process_heat(config):
     """
@@ -27,12 +30,12 @@ def process_heat(config):
     if "heat" in config["hazards"]:
         heat_conf = config["hazards"]["heat"]
         if heat_conf.get("active", False):
-            print("\n--- Processing heat (NetCDF Tmax analysis) ---")
-            process_heat_from_netcdf(heat_conf["input"], config["output_dir"])
+            print("\n--- Processing heat  ---")
+            return process_heat_from_netcdf(heat_conf["input"], config["output_dir"], config["aoi"])
 
-def process_heat_from_netcdf(nc_path, output_dir):
+def process_heat_from_netcdf(nc_path, output_dir, aoi_path):
     """
-    Process heat data from NetCDF file and generate statistics and plots.
+    Process heat data from NetCDF file and generate statistics rasters and plots.
 
     Parameters:
         nc_path (str): Path to the NetCDF file containing 2m temperature (t2m).
@@ -40,6 +43,8 @@ def process_heat_from_netcdf(nc_path, output_dir):
     """
     annual_stats = compute_heat_statistics(nc_path, convert_kelvin=True)
     plot_heat_statistics(annual_stats, output_dir)
+    raster_path = export_max_tmax_raster(nc_path, output_dir, aoi_path) 
+    return raster_path
 
 def compute_heat_statistics(nc_path, convert_kelvin=True):
     """
@@ -114,3 +119,43 @@ def plot_heat_statistics(annual_stats, output_dir):
     plt.savefig(hotd_path)
     display(Image(filename=hotd_path))
     plt.close()
+
+def export_max_tmax_raster(nc_path, output_dir, aoi_path, convert_kelvin=True):
+    """
+    Export annual maximum temperature per pixel from NetCDF to GeoTIFF,
+    optionally clipped to an Area of Interest (AOI).
+
+    Parameters:
+        nc_path (str): Path to the input NetCDF file (variable 't2m')
+        output_dir (str): Output directory to save the raster
+        aoi_path (str, optional): Path to AOI shapefile or GeoJSON to clip the raster
+        convert_kelvin (bool): Convert temperature from Kelvin to Celsius (default: True)
+
+    Output:
+        Saves 'heat_max_tmax.tif' in the output directory.
+    """
+    variable = "t2m"
+    ds = xr.open_dataset(nc_path)
+    data = ds[variable]
+
+    if convert_kelvin:
+        data = data - 273.15
+
+    # Get time dimension name
+    time_dim = "time" if "time" in data.dims else "valid_time"
+
+    # Compute max temperature per pixel over time
+    max_tmax = data.max(dim=time_dim)
+
+    # Set CRS if not present
+    if not max_tmax.rio.crs:
+        max_tmax = max_tmax.rio.write_crs("EPSG:4326")
+    # Clip to AOI if provided
+    if aoi_path:
+        aoi = gpd.read_file(aoi_path).to_crs("EPSG:4326")
+        max_tmax = max_tmax.rio.clip(aoi.geometry.values, aoi.crs, drop=True)
+
+    # Export raster
+    output_path = os.path.join(output_dir, "heat_max_tmax.tif")
+    max_tmax.rio.to_raster(output_path)
+    return output_path

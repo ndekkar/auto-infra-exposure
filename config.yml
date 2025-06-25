@@ -37,11 +37,12 @@ hazards:
     threshold: 0.3
 
   wildfire:
-    active: false
-    input: "/Users/nassimdekkar/Downloads/GLOBFIRE_burned_area_full_dataset_2002_2023"  # Directory containing wildfire shapefiles
-
-  drought:
     active: true
+    input: "/Users/nassimdekkar/Downloads/GLOBFIRE_burned_area_full_dataset_2002_2023"  # Directory containing wildfire shapefiles
+    threshold: 0.5
+    
+  drought:
+    active: false
     start_year: 2022     # Start year for drought analysis
     start_month: 6       # Start month (1–12)
     end_year: 2023       # End year for drought analysis
@@ -50,3 +51,4 @@ hazards:
   heat:
     active: false
     input: "../data/heat.nc"  # NetCDF file for heat hazard (e.g. Tmax)
+    threshold: 38

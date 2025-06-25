@@ -12,3 +12,4 @@ numpy
 pyyaml
 earthengine-api
 geemap
+rioxarray
