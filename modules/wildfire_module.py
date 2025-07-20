@@ -38,7 +38,8 @@ def process_wildfire(config):
             )
             plot_fire_density(
                 gpkg_path=os.path.join(config["output_dir"], "wildfire_centroids.gpkg"),
-                save_path=os.path.join(config["output_dir"], "wildfire_density.png")
+                save_path=os.path.join(config["output_dir"], "wildfire_density.png"),
+                aoi_path=config["aoi"]
             )
             return rasterize_fire_centroids(centroids_path, raster_path)
 
@@ -76,38 +77,56 @@ def extract_burned_area_centroids(aoi_path, globfire_dir, output_path):
     output_gdf = gpd.GeoDataFrame(geometry=all_points, crs='EPSG:4326')
     output_gdf.to_file(output_path, driver='GPKG', layer='burned_area_centroids')
 
-def plot_fire_density(gpkg_path, save_path=None):
+def plot_fire_density(gpkg_path, save_path=None, aoi_path=None):
     """
-    Generate a KDE density heatmap of wildfire centroids.
+    Generate and save a KDE heatmap of wildfire centroids, styled like other exposure maps.
 
     Parameters:
     - gpkg_path (str): Path to the GeoPackage file containing wildfire centroids.
-    - save_path (str, optional): Path to save the output PNG image. If None, displays it.
+    - save_path (str): Path to save the output PNG image.
+    - aoi_path (str): Path to the AOI shapefile for extent and clipping.
     """
     gdf = gpd.read_file(gpkg_path)
-    gdf_web = gdf.to_crs(epsg=3857)
-    df = pd.DataFrame({
-        'x': gdf_web.geometry.x,
-        'y': gdf_web.geometry.y
-    })
+    gdf = gdf.to_crs(epsg=3857)
 
-    fig, ax = plt.subplots(figsize=(10, 8))
-    kde = sns.kdeplot(
-        data=df, x='x', y='y', fill=True,
-        cmap='Reds', bw_adjust=0.5, levels=100, thresh=0.05, ax=ax
+    # Load AOI for bounds and plotting
+    aoi = gpd.read_file(aoi_path).to_crs(epsg=3857) if aoi_path else None
+    bounds = aoi.total_bounds if aoi is not None else gdf.total_bounds
+    xmin, ymin, xmax, ymax = bounds
+
+    df = pd.DataFrame({'x': gdf.geometry.x, 'y': gdf.geometry.y})
+
+    fig, ax = plt.subplots(figsize=(12, 12)) 
+    sns.kdeplot(
+        data=df, x='x', y='y',
+        fill=True, cmap='Reds', bw_adjust=0.5,
+        levels=100, thresh=0.05, ax=ax
     )
 
-    mappable = kde.collections[0]
-    cbar = plt.colorbar(mappable, ax=ax, label="Wildfire Density")
-    ctx.add_basemap(ax, crs='EPSG:3857')
-    ax.set_title("Wildfire Density Heatmap")
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    if aoi is not None:
+        aoi.boundary.plot(ax=ax, color="black", linewidth=1, zorder=2)
+
+    # Remove axis graduations
+    ax.axis("off")
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.set_aspect("equal")
+
+    # Add basemap
+    try:
+        ctx.add_basemap(ax, crs='EPSG:3857', source=ctx.providers.CartoDB.Positron)
+    except Exception as e:
+        print(f"Basemap error: {e}")
+
+    ax.set_title("Wildfire Density", fontsize=15, fontweight="bold")
+    plt.tight_layout()
 
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.show()
     else:
         plt.show()
+    plt.close()
 
 def rasterize_fire_centroids(gpkg_path, output_tif_path, resolution=0.01):
     """

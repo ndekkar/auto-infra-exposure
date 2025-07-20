@@ -44,40 +44,33 @@ def combine_rasters(raster_paths, output_path, method='max'):
         dst.write(data, 1)
 
 
-
 def process_combined_flood(config, hazard_rasters, aoi, points, lines, sample_points_per_line):
     """
-    Process combined flood hazard by merging pluvial and fluvial flood rasters.
-
-    This function:
-    - Combines flood rasters (pluvial + fluvial) using the 'max' method.
-    - Computes exposure for points and lines.
-    - Saves exposed features as shapefiles.
-    - Generates a visualization map.
-
+    Process combined flood hazard (fluvial + pluvial) and generate exposure outputs.
+    
     Parameters:
         config (dict): Loaded YAML configuration.
-        hazard_rasters (dict): Dictionary with hazard names mapped to (path, threshold).
+        hazard_rasters (dict): Dict with hazard_name -> (raster_path, threshold).
         aoi (GeoDataFrame): Area of interest.
-        points (GeoDataFrame): Infrastructure points.
-        lines (GeoDataFrame): Infrastructure lines.
-        sample_points_per_line (int): Number of samples to interpolate per line.
+        points (GeoDataFrame): Merged infrastructure points (with 'infra_type').
+        lines (GeoDataFrame): Merged infrastructure lines (with 'infra_type').
+        sample_points_per_line (int): Sampling density for line exposure.
     """
     if "pluvial_flood" in hazard_rasters and "fluvial_flood" in hazard_rasters:
         print("\n--- Processing combined flood ---")
 
-        # Input paths and thresholds
         pluvial_path, pluvial_threshold = hazard_rasters["pluvial_flood"]
         fluvial_path, fluvial_threshold = hazard_rasters["fluvial_flood"]
-        combined_path = os.path.join(config["output_dir"], "combined_flood.tif")
 
-        # Combine rasters using max value
-        combine_rasters([pluvial_path, fluvial_path], combined_path, method='max')
-        combined_raster = rasterio.open(combined_path)
+        combined_path = os.path.join(config["output_dir"], "combined_flood.tif")
         combined_threshold = max(pluvial_threshold, fluvial_threshold)
 
+        # Combine rasters
+        combine_rasters([pluvial_path, fluvial_path], combined_path, method='max')
+        combined_raster = rasterio.open(combined_path)
+
         # Points exposure
-        points_combined = extract_values_to_points(points, combined_raster, combined_threshold)
+        points_combined = extract_values_to_points(points.copy(), combined_raster, combined_threshold)
         points_combined.to_file(os.path.join(config["output_dir"], "points_exposure_combined_flood.shp"))
 
         # Lines exposure
@@ -87,8 +80,14 @@ def process_combined_flood(config, hazard_rasters, aoi, points, lines, sample_po
         )
         lines_combined.to_file(os.path.join(config["output_dir"], "lines_exposure_combined_flood.shp"))
 
-        # Plot map
+        # Plot combined map
         plot_and_save_exposure_map(
-            aoi, points_combined, lines_combined,
-            "combined_flood", config["output_dir"], combined_path
+            aoi=aoi,
+            points=points_combined,
+            lines=lines_combined,
+            hazard_name="combined_flood",
+            output_dir=config["output_dir"],
+            raster_path=combined_path,
+            group_by_type=True 
         )
+

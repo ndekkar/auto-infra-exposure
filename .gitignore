@@ -1,6 +1,13 @@
+
 data/
 output/
-
+output2/
+outputjuly/
+*.tif
+*.shp
+*.png
+*.nc
+*.zip
 # Ignore Python cache and temp files
 __pycache__/
 *.py[cod]

@@ -12,6 +12,8 @@ import contextily as ctx
 import numpy as np
 import os
 import rasterio
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
 from rasterio.mask import mask
 from matplotlib.colors import ListedColormap, BoundaryNorm, Normalize
 from matplotlib.cm import ScalarMappable
@@ -77,7 +79,7 @@ def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
             extent=extent,
             vmin=vmin,
             vmax=vmax,
-            alpha=0.6
+            alpha=0.8
         )
         # colorbar
         norm = Normalize(vmin=vmin, vmax=vmax)
@@ -98,7 +100,7 @@ def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
             norm=norm,
             extent=extent,
             origin='upper',
-            alpha=0.6
+            alpha=0.8
         )
         tick_pos = [
             (spec["breaks"][i] + spec["breaks"][i+1]) / 2
@@ -113,7 +115,7 @@ def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
     return extent
 
 
-def plot_and_save_exposure_map(aoi, points, lines, hazard_name, output_dir, raster_path=None, resolution=300):
+def plot_and_save_exposure_map(aoi, points, lines, hazard_name, output_dir, raster_path=None, resolution=300, suffix="",group_by_type=True):
     """
     Generate and save an exposure map showing the AOI, energy infrastructure, and optional raster hazard.
 
@@ -133,6 +135,18 @@ def plot_and_save_exposure_map(aoi, points, lines, hazard_name, output_dir, rast
         resolution (int): Resolution in DPI for the saved image.
     """
     spec = get_hazard_display_spec(hazard_name)
+    # Custom symbology for exposure map
+    custom_point_styles = {
+        "substations": {"color": "#b2df8a", "marker": "^", "label": "Substation"},
+        "transformer": {"color": "black", "marker": "o", "label": "Transformer"},
+        "tower": {"color": "gray", "marker": "s", "label": "Tower"},
+        "existing": {"color": "blue", "marker": "^", "label": "Existing substation"},
+    }
+    custom_line_styles = {
+        "hv": {"color": "yellow", "linestyle": "-", "linewidth": 2.5, "label": "High transmission line"},
+        "lv": {"color": "#970499", "linestyle": "-", "linewidth": 1.5, "label": "Low transmission line"},
+        "existing": {"color": "black", "linestyle": "--", "linewidth": 1.5, "label": "Existing line"},
+    }
     xmin = ymin = xmax = ymax = None
     masked = None  # masked raster array to display
 
@@ -140,9 +154,12 @@ def plot_and_save_exposure_map(aoi, points, lines, hazard_name, output_dir, rast
     if raster_path:
         with rasterio.open(raster_path) as src:
             geoms = [f["geometry"] for f in aoi.to_crs(src.crs).__geo_interface__["features"]]
-            arr, transform = mask(src, geoms, crop=True, nodata=np.nan, filled=True)
-            arr = arr[0]
-        masked = np.ma.masked_invalid(arr)
+            #arr, transform = mask(src, geoms, crop=True, nodata=np.nan, filled=True)
+            #arr = arr[0]
+            masked_arr, transform = mask(src, geoms, crop=True, filled=False)
+            masked_arr = masked_arr[0]                         
+        masked = np.ma.masked_array(masked_arr.data,mask=masked_arr.mask)
+        #masked = np.ma.masked_invalid(arr)
         height, width = masked.shape
         bounds = rasterio.transform.array_bounds(height, width, transform)
         xmin, xmax, ymin, ymax = bounds[0], bounds[2], bounds[1], bounds[3]
@@ -167,32 +184,83 @@ def plot_and_save_exposure_map(aoi, points, lines, hazard_name, output_dir, rast
         if spec["type"] == "continuous":
             vmin, vmax = float(masked.min()), float(masked.max())
             im = ax.imshow(masked, cmap=spec["cmap"], extent=(xmin, xmax, ymin, ymax),
-                           vmin=vmin, vmax=vmax, alpha=0.6, zorder=1)
+                           vmin=vmin, vmax=vmax, alpha=0.8, zorder=1)
             norm = Normalize(vmin=vmin, vmax=vmax)
             sm = ScalarMappable(cmap=spec["cmap"], norm=norm)
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="3%", pad=0.1)
-            cbar = plt.colorbar(sm, cax=cax)
-            cbar.set_label(spec["label"])
+            #divider = make_axes_locatable(ax)
+            #cax = divider.append_axes("right", size="3%", pad=0.1)
+            #cbar = plt.colorbar(sm, cax=cax)
+            #cbar.set_label(spec["label"])
         else:
             cmap = ListedColormap(spec["palette"])
             norm = BoundaryNorm(spec["breaks"], len(spec["palette"]))
             im = ax.imshow(masked, cmap=cmap, norm=norm,
                            extent=(xmin, xmax, ymin, ymax), origin='upper',
-                           alpha=0.6, zorder=1)
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="3%", pad=0.1)
-            ticks = [(spec["breaks"][i] + spec["breaks"][i+1]) / 2 for i in range(len(spec["breaks"]) - 1)]
-            cbar = plt.colorbar(im, cax=cax, ticks=ticks)
-            cbar.ax.set_yticklabels(spec["labels"])
-            cbar.set_label(spec["label"])
+                           alpha=0.8, zorder=1)
+            #divider = make_axes_locatable(ax)
+            #cax = divider.append_axes("right", size="3%", pad=0.1)
+            #ticks = [(spec["breaks"][i] + spec["breaks"][i+1]) / 2 for i in range(len(spec["breaks"]) - 1)]
+            #cbar = plt.colorbar(im, cax=cax, ticks=ticks)
+            # cbar.ax.set_yticklabels(spec["labels"])
+            #cbar.set_label(spec["label"])
 
     # Step 5: Plot vector data above raster
     aoi.boundary.plot(ax=ax, color="black", linewidth=1, zorder=2)
-    safe_plot(lines[~lines["exposed"]], ax, color="gray", label="Lines not exposed", zorder=3)
-    safe_plot(lines[lines["exposed"]], ax, color="orange", label="Exposed lines", zorder=4)
-    safe_plot(points[~points["exposed"]], ax, color="green", markersize=10, label="PTs not exposed", zorder=5)
-    safe_plot(points[points["exposed"]], ax, color="red", markersize=10, label="Exposed PTs", zorder=6)
+
+    if "infra_type" in points.columns and "exposed" in points.columns:
+        for pt_type in points["infra_type"].unique():
+            pts = points[points["infra_type"] == pt_type]
+            style = custom_point_styles.get(pt_type, {"color": "gray", "marker": "o", "label": pt_type})
+    
+            # Not exposed: original color
+            safe_plot(
+                pts[~pts["exposed"]],
+                ax,
+                color=style["color"],
+                marker=style["marker"],
+                markersize=30,
+                label=f"{style['label']} (not exposed)",
+                zorder=5,
+            )
+            # Exposed: red
+            safe_plot(
+                pts[pts["exposed"]],
+                ax,
+                color="red",
+                marker=style["marker"],
+                markersize=30,
+                label=f"{style['label']} (exposed)",
+                zorder=6,
+            )
+
+
+    if "infra_type" in lines.columns and "exposed" in lines.columns:
+        for ln_type in lines["infra_type"].unique():
+            lns = lines[lines["infra_type"] == ln_type]
+            style = custom_line_styles.get(ln_type, {"color": "gray", "linestyle": "-", "linewidth": 1.5, "label": ln_type})
+    
+            # Not exposed: original color
+            safe_plot(
+                lns[~lns["exposed"]],
+                ax,
+                color=style["color"],
+                linestyle=style["linestyle"],
+                linewidth=style["linewidth"],
+                label=f"{style['label']} (not exposed)",
+                zorder=3,
+            )
+    
+            # Exposed: red 
+            safe_plot(
+                lns[lns["exposed"]],
+                ax,
+                color="red",
+                linewidth=style["linewidth"],
+                label=f"{style['label']} (exposed)",
+                zorder=4,
+            )
+
+
 
     # Step 6: Final formatting
     ax.set_aspect("equal")
@@ -203,7 +271,12 @@ def plot_and_save_exposure_map(aoi, points, lines, hazard_name, output_dir, rast
         ax.legend() 
 
     # Step 7: Save the figure
-    output_path = os.path.join(output_dir, f"exposure_map_{hazard_name}.png")
+    if suffix:
+        output_filename = f"exposure_map_{hazard_name}_{suffix}.png"
+    else:
+        output_filename = f"exposure_map_{hazard_name}.png"
+    output_path = os.path.join(output_dir, output_filename)
+    plt.tight_layout()
     plt.savefig(output_path, dpi=resolution, bbox_inches="tight")
     plt.show()
     plt.close()
@@ -240,3 +313,70 @@ def plot_initial_map(aoi, points, lines, output_path=None):
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
     else:
         plt.show()
+
+
+def plot_initial_map_by_type(aoi, points_by_type, lines_by_type, output_path):
+    """
+    Plot all infrastructure layers (points and lines) by type on a single map, with legend.
+
+    Parameters:
+        aoi (GeoDataFrame): Area of interest.
+        points_by_type (dict): Dict of {type_name: GeoDataFrame} for point features.
+        lines_by_type (dict): Dict of {type_name: GeoDataFrame} for line features.
+        output_path (str): Path to save the output map image.
+    """
+    fig, ax = plt.subplots(figsize=(12, 12))
+    # Custom styles for points
+    custom_point_styles = {
+        "substations": {"color": "#b2df8a", "marker": "^", "label": "Substation"},
+        "transformer": {"color": "black", "marker": "o", "label": "Transformer"},
+        "tower": {"color": "gray", "marker": "s", "label": "Tower"},
+        "existing": {"color": "blue", "marker": "^", "label": "Existing substation"},
+    }
+    
+    # Custom styles for lines
+    custom_line_styles = {
+        "hv": {"color": "yellow", "linestyle": "-", "linewidth": 2.5, "label": "High transmission line"},
+        "lv": {"color": "#970499", "linestyle": "-", "linewidth": 1.5, "label": "Low transmission line"},
+        "existing": {"color": "black", "linestyle": "--", "linewidth": 1.5, "label": "Existing line"},
+    }
+    
+    # Plot AOI
+    aoi.boundary.plot(ax=ax, color="black", linewidth=1, label="AOI", zorder=1)
+
+
+    # Plot all point types
+    for name, gdf in points_by_type.items():
+        if gdf.empty or gdf.crs is None:
+            continue
+        style = custom_point_styles.get(name, {"color": "gray", "marker": "o", "label": f"Point: {name}"})
+        gdf.plot(ax=ax, color=style["color"], marker=style["marker"],
+                 markersize=30, label=style["label"], zorder=2)
+
+
+    # Plot all line types
+    for name, gdf in lines_by_type.items():
+        if gdf.empty or gdf.crs is None:
+            continue
+        style = custom_line_styles.get(name, {"color": "gray", "linestyle": "-", "linewidth": 1.0, "label": f"Line: {name}"})
+        gdf.plot(ax=ax, color=style["color"], linestyle=style["linestyle"],
+                 linewidth=style["linewidth"], label=style["label"], zorder=3)
+
+
+    # Add basemap
+    try:
+        ctx.add_basemap(ax, crs=aoi.crs.to_string(), source=ctx.providers.CartoDB.Positron, attribution_size=6)
+    except Exception as e:
+        print(f"[!] Could not load basemap: {e}")
+
+    # Final styling
+    ax.set_title("Initial Infrastructure Map", fontsize=16, fontweight="bold")
+    ax.set_axis_off()
+    ax.legend()
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.show()
+    plt.close()
+
+

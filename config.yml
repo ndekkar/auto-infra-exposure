@@ -1,16 +1,24 @@
 # === Global Configuration ===
 
 # Path to the Area of Interest (AOI) shapefile
-aoi: "../data/aoi.shp"
+aoi: "../data/kazak/gadm41_KAZ_0.shp"
 
 # Path to infrastructure points (e.g. substations, power plants)
-infra_points_input: "../data/power_points.shp"
+infrastructure_inputs:
+  points:
+    transformer: "../data/tajik/TJK_Transformers.shp"
+    tower: "../data/tajik/TJK_Towers.shp"
+    substations: "../data/tajik/TJK_Substations.shp"
+    existing: null      
 
-# Path to infrastructure lines (e.g. power lines)
-infra_lines_input: "../data/power_lines.shp"
+  lines:
+    lv: "../data/tajik/TJK_LV_Lines.shp"
+    hv: "../data/tajik/TJK_HV_Lines.shp"
+    existing: null
+
 
 # Directory where all outputs will be saved
-output_dir: "../output"
+output_dir: "../earthquake"
 
 
 # === Hazard Layers Configuration ===
@@ -18,12 +26,12 @@ hazards:
 
   pluvial_flood:
     active: false
-    input: "../data/plu.tif"        # Raster input for pluvial flood
+    input: "../data/kazak/PLU_10y_UZB.tif"        # Raster input for pluvial flood
     threshold: 4                 # Threshold value for exposure
 
   fluvial_flood:
     active: false
-    input: "../data/flu.tif"        # Raster input for fluvial flood
+    input: "../data/kazak/FLU_UND_10y_KAZ.tif"        # Raster input for fluvial flood
     threshold: 6
 
   landslide:
@@ -34,19 +42,12 @@ hazards:
   earthquake:
     active: true
     input: "../data/earthquacke.tif"    # Raster input for seismic hazard
-    threshold: 0.3
+    threshold: 0.5
 
   wildfire:
     active: false
     input: "/Users/nassimdekkar/Downloads/GLOBFIRE_burned_area_full_dataset_2002_2023"  # Directory containing wildfire shapefiles
-    threshold: 0.5
-    
-  drought:
-    active: false
-    start_year: 2022     # Start year for drought analysis
-    start_month: 6       # Start month (1–12)
-    end_year: 2023       # End year for drought analysis
-    end_month: 8         # End month (1–12)
+    threshold: 0.5  
 
   heat:
     active: false
