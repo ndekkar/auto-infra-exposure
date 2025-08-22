@@ -1,7 +1,7 @@
 # === Global Configuration ===
 
 # Path to the Area of Interest (AOI) shapefile
-aoi: "../data/kazak/gadm41_KAZ_0.shp"
+aoi: "../data/tajik/aoi.shp"
 
 # Path to infrastructure points (e.g. substations, power plants)
 infrastructure_inputs:
@@ -18,24 +18,24 @@ infrastructure_inputs:
 
 
 # Directory where all outputs will be saved
-output_dir: "../earthquake"
+output_dir: "../data/outputTest"
 
 
 # === Hazard Layers Configuration ===
 hazards:
 
   pluvial_flood:
-    active: false
-    input: "../data/kazak/PLU_10y_UZB.tif"        # Raster input for pluvial flood
+    active: true
+    input: "../data/tajik/plu.tif"        # Raster input for pluvial flood
     threshold: 4                 # Threshold value for exposure
 
   fluvial_flood:
-    active: false
-    input: "../data/kazak/FLU_UND_10y_KAZ.tif"        # Raster input for fluvial flood
+    active: true
+    input: "../data/tajik/flu.tif"        # Raster input for fluvial flood
     threshold: 6
 
   landslide:
-    active: false
+    active: true
     input: "../data/landslide.tif"  # Raster input for landslide
     threshold: 0.3
 
@@ -45,11 +45,11 @@ hazards:
     threshold: 0.5
 
   wildfire:
-    active: false
+    active: true
     input: "/Users/nassimdekkar/Downloads/GLOBFIRE_burned_area_full_dataset_2002_2023"  # Directory containing wildfire shapefiles
     threshold: 0.5  
 
   heat:
-    active: false
+    active: true
     input: "../data/heat.nc"  # NetCDF file for heat hazard (e.g. Tmax)
     threshold: 38
