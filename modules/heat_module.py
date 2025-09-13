@@ -18,7 +18,7 @@ import seaborn as sns
 import rioxarray 
 from IPython.display import Image, display
 from statsmodels.nonparametric.smoothers_lowess import lowess
-
+from modules.plotting import add_scalebar, add_north_arrow
 
 def process_heat(config):
     """
@@ -99,6 +99,8 @@ def plot_heat_statistics(annual_stats, output_dir):
     plt.ylabel("Tmax (°C)", fontsize=20, fontweight="bold")
     plt.legend()
     tmax_path = os.path.join(output_dir, 'Tmax2.png')
+    #add_scalebar(ax, loc='lower left')      # or use length_km=5 for fixed scale
+    #add_north_arrow(ax, loc='upper left')   # change location if needed
     plt.savefig(tmax_path)
     display(Image(filename=tmax_path))
     plt.close()
@@ -115,6 +117,8 @@ def plot_heat_statistics(annual_stats, output_dir):
     plt.ylabel("", fontsize=20, fontweight="bold")
     plt.legend()
     hotd_path = os.path.join(output_dir, 'HotD2.png')
+    #add_scalebar(ax, loc='lower left')      # or use length_km=5 for fixed scale
+    #add_north_arrow(ax, loc='upper left')   # change location if needed
     plt.savefig(hotd_path)
     display(Image(filename=hotd_path))
     plt.close()

@@ -19,7 +19,7 @@ import geopandas as gpd
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 
 from modules.exposure_utils import extract_values_to_points, check_line_exposure
-from modules.plotting import plot_and_save_exposure_map
+from modules.plotting import plot_and_save_exposure_map, add_scalebar, add_north_arrow
 
 
 def _ensure_infra_type(gdf: Optional[gpd.GeoDataFrame]) -> Optional[gpd.GeoDataFrame]:
@@ -168,10 +168,12 @@ def _plot_combined_map(
         except Exception as e:
             print(f"[WARN] Cannot plot points: {e}")
 
-    ax.set_title(title, fontsize=16, weight="bold")
+    #ax.set_title(title, fontsize=16, weight="bold")
     ax.set_axis_off()
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
+    add_scalebar(ax, loc='lower left')      # or use length_km=5 to force fixed size
+    add_north_arrow(ax, loc='upper left')   # change loc if it overlaps with legend
     fig.savefig(out_png, dpi=200)
     plt.show()
     plt.close(fig)

@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import geemap
 import ee
 from rasterio.mask import mask
+from modules.plotting import add_scalebar, add_north_arrow
 
 def process_drought(config):
     """
@@ -96,7 +97,7 @@ def plot_ndmi_raster(tif_path, output_dir, aoi_path):
             
             fig, ax = plt.subplots(figsize=(12, 10))
             im = ax.imshow(data, cmap='RdYlGn', vmin=vmin, vmax=vmax)
-            ax.set_title("Drought Index (NDMI)")
+            #ax.set_title("Drought Index (NDMI)")
             ax.axis('off')
 
             # Colorbar
@@ -105,6 +106,8 @@ def plot_ndmi_raster(tif_path, output_dir, aoi_path):
 
             plt.tight_layout()
             map_path = os.path.join(output_dir, "drought_map_ndmi.png")
+            #add_scalebar(ax, loc='lower left')      # or use length_km=5 to force fixed size
+            #add_north_arrow(ax, loc='upper left')   # change loc if it overlaps with legend
             plt.savefig(map_path, dpi=300)
             plt.show()
 

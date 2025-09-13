@@ -167,7 +167,9 @@ def run_multi_hazard_pipeline(config_path: str):
         gdf = gdf[gdf.geometry.intersects(aoi_union)]
         gdf["type"] = name
         lines_by_type[name] = gdf
-
+    
+    config["_points_by_type"] = points_by_type
+    config["_lines_by_type"]  = lines_by_type
     # Union layers
     all_points = gpd.GeoDataFrame(pd.concat(points_by_type.values(), ignore_index=True), crs=aoi.crs) if points_by_type else None
     all_lines  = gpd.GeoDataFrame(pd.concat(lines_by_type.values(),  ignore_index=True), crs=aoi.crs) if lines_by_type else None

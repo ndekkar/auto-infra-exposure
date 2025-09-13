@@ -19,7 +19,7 @@ import rasterio
 from rasterio.mask import mask
 
 from modules.exposure_utils import extract_values_to_points, check_line_exposure
-from modules.plotting import plot_and_save_exposure_map
+from modules.plotting import plot_and_save_exposure_map, plot_initial_map_by_type
 from modules.crs_utils import assign_or_reproject_to_wgs84
 
 
@@ -131,16 +131,19 @@ def process_raster_exposures(config,
             with rasterio.open(out_path, "w", **meta) as dst:
                 dst.write(clipped)
 
-            # Plot (no exposure features for earthquake here)
+            all_points_dummy = gpd.GeoDataFrame(pd.concat(points_by_type.values(), ignore_index=True), crs=aoi.crs) if points_by_type else                                                   _empty_gdf(aoi.crs)
+            all_lines_dummy  = gpd.GeoDataFrame(pd.concat(lines_by_type.values(),  ignore_index=True), crs=aoi.crs) if lines_by_type else                                                   _empty_gdf(aoi.crs)
+            all_points_dummy["exposed"] = False
+            all_lines_dummy["exposed"]  = False
+
             plot_and_save_exposure_map(
                 aoi=aoi,
-                points=_empty_gdf(aoi.crs),
-                lines=_empty_gdf(aoi.crs),
-                hazard_name=hazard_name,
+                points=all_points_dummy,
+                lines=all_lines_dummy,
+                hazard_name="earthquake",
                 output_dir=config["output_dir"],
                 raster_path=out_path
             )
-
             # Normalized result with empty GDFs
             exposure_results[hazard_name] = {
                 "points_exposed": _ensure_exposed_bool(_empty_gdf(aoi.crs)),

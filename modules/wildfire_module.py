@@ -1,158 +1,213 @@
 """
-Module for processing wildfire hazard using GlobFire burned area data.
+Wildfire processing: build a raster from burned-area centroids and plot
+ONE map with the raster underlay + energy network by type.
 
-This module extracts wildfire centroids from shapefiles within an Area of Interest (AOI)
-and generates a kernel density estimate (KDE) heatmap of wildfire occurrence.
-
-Functions:
-- process_wildfire: Main entry point to control wildfire hazard processing.
-- extract_burned_area_centroids: Reads and filters GlobFire shapefiles to extract burned area centroids.
-- plot_fire_density: Generates and saves a KDE heatmap of wildfire centroids.
+Behavior:
+- Extract centroids within AOI (from GlobFire polygons)
+- Rasterize centroids to a TIF
+- Plot a single map: wildfire TIF + network (points/lines by type) + basemap
 """
 
 import os
+from typing import Dict, Optional
+
 import geopandas as gpd
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 from shapely.geometry import Point
-import contextily as ctx
 
-def process_wildfire(config):
-    """
-    Process wildfire hazard using burned area shapefiles and generate a density map.
+from modules.plotting import plot_initial_map_by_type
 
-    Parameters:
-    - config (dict): Configuration dictionary loaded from YAML.
+
+# -------------------------------
+# Public entry
+# -------------------------------
+def process_wildfire(config) -> Optional[str]:
     """
-    if "wildfire" in config["hazards"]:
-        wildfire_conf = config["hazards"]["wildfire"]
-        if wildfire_conf.get("active", False):
-            centroids_path = os.path.join(config["output_dir"], "wildfire_centroids.gpkg")
-            raster_path = os.path.join(config["output_dir"], "wildfire_centroids.tif")
-            
-            extract_burned_area_centroids(
-                aoi_path=config["aoi"],
-                globfire_dir=wildfire_conf["input"],
-                output_path=os.path.join(config["output_dir"], "wildfire_centroids.gpkg")
-            )
-            plot_fire_density(
-                gpkg_path=os.path.join(config["output_dir"], "wildfire_centroids.gpkg"),
-                save_path=os.path.join(config["output_dir"], "wildfire_density.png"),
-                aoi_path=config["aoi"]
-            )
-            return rasterize_fire_centroids(centroids_path, raster_path)
+    Main entry point for wildfire.
+    - Builds wildfire centroids (GPKG) and a raster (TIF)
+    - Plots a single map with the raster + network by type
+    - Returns the raster path (or None on failure)
+    """
+    wf = (config.get("hazards", {}).get("wildfire", {}) or {})
+    if not wf.get("active", False):
+        print("[INFO] Wildfire inactive; skipping.")
+        return None
+
+    out_dir = config["output_dir"]
+    os.makedirs(out_dir, exist_ok=True)
+
+    aoi_path = config["aoi"]
+    gpkg_centroids = os.path.join(out_dir, "wildfire_centroids.gpkg")
+    tif_raster = os.path.join(out_dir, "wildfire_centroids.tif")
+    png_map = os.path.join(out_dir, "wildfire_w_network.png")
+
+    # 1) Extract centroids in AOI
+    try:
+        extract_burned_area_centroids(
+            aoi_path=aoi_path,
+            globfire_dir=wf["input"],
+            output_path=gpkg_centroids
+        )
+    except Exception as e:
+        print(f"[ERROR] Wildfire centroids failed: {e}")
+        return None
+
+    # 2) Rasterize centroids → TIF
+    try:
+        rasterize_fire_centroids(gpkg_centroids, tif_raster, resolution=0.01)
+    except Exception as e:
+        print(f"[ERROR] Wildfire rasterization failed: {e}")
+        return None
+
+    # 3) Prepare AOI and network dicts (points_by_type / lines_by_type)
+    try:
+        aoi_gdf = gpd.read_file(aoi_path)
+        aoi_gdf = aoi_gdf.to_crs(aoi_gdf.crs or "EPSG:3857")  # ensure CRS set
+
+        points_by_type = config.get("_points_by_type")
+        lines_by_type  = config.get("_lines_by_type")
+
+        # Fallback: rebuild dicts from configured inputs if cache not present
+        if not points_by_type or not lines_by_type:
+            points_by_type, lines_by_type = _load_network_from_config_inputs(config)
+
+        # Reproject network dicts to AOI CRS (critical for display)
+        target_crs = aoi_gdf.crs
+        points_by_type = _reproj_dict(points_by_type, target_crs)
+        lines_by_type  = _reproj_dict(lines_by_type, target_crs)
+    except Exception as e:
+        print(f"[WARN] Wildfire: could not prep network dicts: {e}")
+        points_by_type, lines_by_type = {}, {}
+
+    # 4) Plot ONE map: raster + network by type
+    try:
+        plot_initial_map_by_type(
+            aoi=aoi_gdf,
+            points_by_type=points_by_type or {},
+            lines_by_type=lines_by_type or {},
+            output_path=png_map,
+            raster_path=tif_raster,
+            hazard_name="wildfire"
+        )
+        print(f"[INFO] Wildfire map written: {png_map}")
+    except Exception as e:
+        print(f"[WARN] Wildfire map failed: {e}")
+
+    # Return raster path for downstream overlay stats if needed
+    return tif_raster
+
+
+# -------------------------------
+# Helpers
+# -------------------------------
+def _reproj_dict(d: Optional[Dict[str, gpd.GeoDataFrame]], target_crs):
+    """Reproject all non-empty GeoDataFrames in a dict to target_crs."""
+    out = {}
+    if isinstance(d, dict):
+        for k, g in d.items():
+            if g is None or len(g) == 0:
+                continue
+            if g.crs is None:
+                g = g.set_crs(target_crs, allow_override=True)
+            elif g.crs != target_crs:
+                g = g.to_crs(target_crs)
+            out[k] = g
+    return out
+
+
+def _load_network_from_config_inputs(config):
+    """
+    Fallback: build points_by_type / lines_by_type from file paths in config:
+      config["infrastructure_inputs"]["points"][type] -> path
+      config["infrastructure_inputs"]["lines"][type]  -> path
+    Adds a 'type' column to each GDF.
+    """
+    pts_dict, lns_dict = {}, {}
+    infra = config.get("infrastructure_inputs", {})
+    pts_spec = (infra.get("points") or {})
+    lns_spec = (infra.get("lines") or {})
+
+    # Points (e.g., substations, transformer, tower, existing)
+    for k, pth in pts_spec.items():
+        if not pth:
+            continue
+        try:
+            g = gpd.read_file(pth)
+            g["type"] = k
+            pts_dict[k] = g
+        except Exception as e:
+            print(f"[WARN] Cannot read points '{k}' from {pth}: {e}")
+
+    # Lines (e.g., hv, lv, existing)
+    for k, pth in lns_spec.items():
+        if not pth:
+            continue
+        try:
+            g = gpd.read_file(pth)
+            g["type"] = k
+            lns_dict[k] = g
+        except Exception as e:
+            print(f"[WARN] Cannot read lines '{k}' from {pth}: {e}")
+
+    return pts_dict, lns_dict
+
 
 def extract_burned_area_centroids(aoi_path, globfire_dir, output_path):
     """
-    Extract centroids of burned areas from GlobFire shapefiles within AOI.
-
-    Parameters:
-    - aoi_path (str): Path to the AOI shapefile.
-    - globfire_dir (str): Directory containing burned area shapefiles (GlobFire).
-    - output_path (str): Path where the extracted centroids will be saved as a GeoPackage.
+    Read burned-area polygons (GlobFire), keep those intersecting the AOI (buffered),
+    and write their centroids as a GeoPackage (layer='burned_area_centroids').
     """
     aoi = gpd.read_file(aoi_path).to_crs(epsg=3857)
     aoi_buffered = aoi.buffer(10000)  # 10 km buffer
     aoi_geom = aoi_buffered.unary_union
 
-    all_points = []
+    all_pts = []
+    for fname in os.listdir(globfire_dir):
+        if not fname.lower().endswith(".shp"):
+            continue
+        shp_path = os.path.join(globfire_dir, fname)
+        try:
+            gdf = gpd.read_file(shp_path).to_crs(epsg=3857)
+            filtered = gdf[gdf.intersects(aoi_geom)]
+            centroids = filtered.centroid.to_crs(epsg=4326)
+            all_pts.extend([Point(pt.x, pt.y) for pt in centroids])
+        except Exception as e:
+            print(f"[WARN] Skipping {fname}: {e}")
 
-    for file in os.listdir(globfire_dir):
-        if file.endswith('.shp'):
-            shp_path = os.path.join(globfire_dir, file)
-            try:
-                gdf = gpd.read_file(shp_path).to_crs(epsg=3857)
-                filtered = gdf[gdf.intersects(aoi_geom)]
-                centroids = filtered.centroid
-                centroids = centroids.to_crs(epsg=4326)
-                all_points.extend([Point(pt.x, pt.y) for pt in centroids])
-            except Exception as e:
-                print(f"Error reading {file}: {e}")
-
-    if not all_points:
-        print(" No burned area centroids found.")
+    if not all_pts:
+        print("[INFO] No burned area centroids found.")
+        # still write empty layer so pipeline is consistent
+        gpd.GeoDataFrame(geometry=[], crs="EPSG:4326").to_file(
+            output_path, driver="GPKG", layer="burned_area_centroids"
+        )
         return
 
-    output_gdf = gpd.GeoDataFrame(geometry=all_points, crs='EPSG:4326')
-    output_gdf.to_file(output_path, driver='GPKG', layer='burned_area_centroids')
+    out_gdf = gpd.GeoDataFrame(geometry=all_pts, crs="EPSG:4326")
+    out_gdf.to_file(output_path, driver="GPKG", layer="burned_area_centroids")
 
-def plot_fire_density(gpkg_path, save_path=None, aoi_path=None):
-    """
-    Generate and save a KDE heatmap of wildfire centroids, styled like other exposure maps.
-
-    Parameters:
-    - gpkg_path (str): Path to the GeoPackage file containing wildfire centroids.
-    - save_path (str): Path to save the output PNG image.
-    - aoi_path (str): Path to the AOI shapefile for extent and clipping.
-    """
-    gdf = gpd.read_file(gpkg_path)
-    gdf = gdf.to_crs(epsg=3857)
-
-    # Load AOI for bounds and plotting
-    aoi = gpd.read_file(aoi_path).to_crs(epsg=3857) if aoi_path else None
-    bounds = aoi.total_bounds if aoi is not None else gdf.total_bounds
-    xmin, ymin, xmax, ymax = bounds
-
-    df = pd.DataFrame({'x': gdf.geometry.x, 'y': gdf.geometry.y})
-
-    fig, ax = plt.subplots(figsize=(12, 12)) 
-    sns.kdeplot(
-        data=df, x='x', y='y',
-        fill=True, cmap='Reds', bw_adjust=0.5,
-        levels=100, thresh=0.05, ax=ax
-    )
-
-    if aoi is not None:
-        aoi.boundary.plot(ax=ax, color="black", linewidth=1, zorder=2)
-
-    # Remove axis graduations
-    ax.axis("off")
-    ax.set_xlim(xmin, xmax)
-    ax.set_ylim(ymin, ymax)
-    ax.set_aspect("equal")
-
-    # Add basemap
-    try:
-        ctx.add_basemap(ax, crs='EPSG:3857', source=ctx.providers.CartoDB.Positron)
-    except Exception as e:
-        print(f"Basemap error: {e}")
-
-    ax.set_title("Wildfire Density", fontsize=15, fontweight="bold")
-    plt.tight_layout()
-
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
-    else:
-        plt.show()
-    plt.close()
 
 def rasterize_fire_centroids(gpkg_path, output_tif_path, resolution=0.01):
     """
-    Rasterize centroid points from GeoPackage into a binary raster.
-
-    Parameters:
-        gpkg_path (str): Path to the GeoPackage with burned area centroids.
-        output_tif_path (str): Path to save the output raster.
-        resolution (float): Raster resolution in degrees.
-
-    Returns:
-        str: Path to the output .tif file.
+    Rasterize centroid points (1 = burned, 0 = background) at a given degree resolution.
     """
     import rasterio
     from rasterio.features import rasterize
     from rasterio.transform import from_origin
 
-    gdf = gpd.read_file(gpkg_path).to_crs("EPSG:4326")
-    minx, miny, maxx, maxy = gdf.total_bounds
+    gdf = gpd.read_file(gpkg_path, layer="burned_area_centroids").to_crs("EPSG:4326")
+    if gdf.empty:
+        # write an empty raster with tiny extent to avoid crashes (optional)
+        raise ValueError("No wildfire centroids to rasterize.")
 
-    width = int((maxx - minx) / resolution)
-    height = int((maxy - miny) / resolution)
+    minx, miny, maxx, maxy = gdf.total_bounds
+    width = max(1, int((maxx - minx) / resolution))
+    height = max(1, int((maxy - miny) / resolution))
     transform = from_origin(minx, maxy, resolution, resolution)
 
-    shapes = [(geom, 1) for geom in gdf.geometry]
-    raster = rasterize(
+    shapes = [(geom, 1) for geom in gdf.geometry if geom and not geom.is_empty]
+    if not shapes:
+        raise ValueError("No valid centroid geometries to rasterize.")
+
+    arr = rasterize(
         shapes,
         out_shape=(height, width),
         transform=transform,
@@ -168,7 +223,9 @@ def rasterize_fire_centroids(gpkg_path, output_tif_path, resolution=0.01):
         count=1,
         dtype="uint8",
         crs="EPSG:4326",
-        transform=transform
+        transform=transform,
+        compress="LZW"
     ) as dst:
-        dst.write(raster, 1)
+        dst.write(arr, 1)
+
     return output_tif_path

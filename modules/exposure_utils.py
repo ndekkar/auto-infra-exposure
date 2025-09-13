@@ -12,7 +12,7 @@ import rasterio
 import os
 import geopandas as gpd
 from shapely.geometry import Point
-from .plotting import plot_and_save_exposure_map
+from modules.plotting import plot_and_save_exposure_map
 
 def extract_values_to_points(points_gdf, raster, threshold=0.0):
     """

@@ -47,6 +47,53 @@ def _normalize_exposed_col(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             return gdf
     raise ValueError(f"No exposure boolean column found. Tried: {EXPOSED_COL_CANDIDATES}")
 
+
+
+
+
+
+def _normalize_exposed_col(gdf: "gpd.GeoDataFrame"):
+    """
+    Ensure there is a boolean column named 'exposed' in the GeoDataFrame.
+    If a known exposure flag exists, coerce it to boolean.
+    Otherwise, try to derive it from common class/level/value columns.
+    As a last resort, mark all features as exposed (since these layers
+    typically come from '*_exposed' exports).
+    """
+    if gdf is None or len(gdf) == 0:
+        return gdf
+
+    # 1) Use an existing exposure-like column if present
+    for col in EXPOSED_COL_CANDIDATES:
+        if col in gdf.columns:
+            # Coerce to boolean robustly (handles strings/numbers)
+            gdf['exposed'] = (gdf[col].replace({'True': True, 'False': False, 'true': True, 'false': False, 'YES': True, 'Yes': True, 'No':                               False, 'NO': False, 'Y': True, 'N': False}).apply(lambda v: bool(int(v)) if isinstance(v, (np.integer, int,                                 np.int64, np.int32, np.int16)) else bool(v)))
+            return gdf
+
+    # 2) Try class/level categorical columns (any non-null category counts as exposed)
+    class_like = [c for c in ['class', 'hazard_class', 'risk_class', 'flood_class', 'landslide_class', 'category', 'level', 'hazard_level']
+                  if c in gdf.columns]
+    for c in class_like:
+        # Treat categories (e.g., 'Low', 'Medium', 'High', 'Very High', 1..4) as exposed when not null and not 'none'
+        s = gdf[c].astype(str).str.strip().str.lower()
+        gdf['exposed'] = s.notna() & (s != '') & (s != 'none') & (s != 'nan')
+        return gdf
+
+    # 3) Try numeric intensity/value columns (> 0 counts as exposed)
+    numeric_like = [c for c in ['value', 'intensity', 'depth', 'mmi', 'pga', 'hazard_value', 'score']
+                    if c in gdf.columns]
+    for c in numeric_like:
+        with pd.option_context('mode.use_inf_as_na', True):
+            vals = pd.to_numeric(gdf[c], errors='coerce').fillna(0.0)
+        gdf['exposed'] = vals > 0
+        return gdf
+
+    # 4) Fallback: if this layer is already an "*_exposed" product, consider everything exposed
+    # (prevents breaking downstream stats; adjust if you prefer to be stricter)
+    gdf['exposed'] = True
+    return gdf
+
+
 def _is_metric_crs(crs) -> bool:
     try:
         return crs and crs.axis_info and any(ai.unit_name and ai.unit_name.lower().startswith("metre") for ai in crs.axis_info)

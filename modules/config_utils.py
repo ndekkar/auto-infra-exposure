@@ -5,14 +5,9 @@ This module includes:
 - YAML configuration loading
 - Hazard-specific display specifications for plotting
 """
-
 import yaml
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import ListedColormap
 
-# Custom saturated blue colormap (from light to dark)
-custom_flood_cmap = LinearSegmentedColormap.from_list(
-    "custom_flood", ["#eff3ff", "#6baed6", "#2171b5", "#08306b"]
-)
 
 def load_config(path):
     """
@@ -25,35 +20,86 @@ def load_config(path):
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
-def get_hazard_display_spec(hazard_name):
+def get_hazard_display_spec(hazard_name: str):
     """
-    Get the plotting style and display settings for a specific hazard.
-    Parameters:
-        hazard_name (str): Name of the hazard (e.g. "earthquake", "landslide").
-    Returns:
-        dict: Plotting specification, including type, color map or palette, labels, and title.
+    Return a display spec dict for the given hazard.
+
+    Keys used elsewhere:
+      - type: "discrete" | "continuous"
+      - palette: list of hex colors (for discrete)
+      - breaks: list of class edges (for discrete)
+      - labels: list of class labels (for discrete)
+      - cmap: matplotlib colormap name or object (for continuous)
+      - label: short name for the hazard
+      - legend_title: title to show above the merged legend
     """
-    if hazard_name == "landslide":
+    hn = (hazard_name or "").lower().strip()
+
+    # ----- DISCRETE HAZARDS -----
+    # Common classes for discrete hazards
+    disc_labels = ["Very low", "Low", "Medium", "High", "Very high"]
+
+    # You can tweak these palettes to your project’s exact colors
+    flood_palette = ["#f7fbff",  "#deebf7","#9ecae1", "#3182bd","#08519c"]
+
+    if hn == "pluvial_flood":
+        return {
+            "type": "discrete",
+            "palette": flood_palette,
+            "breaks": [1, 2, 3, 4, 5, 6],   # 5 classes → 6 edges
+            "labels": disc_labels,
+            "label": "Pluvial Flood",
+            "legend_title": "Pluvial Flood Hazard",
+        }
+
+    elif hn == "fluvial_flood":
+        return {
+            "type": "discrete",
+            "palette": flood_palette,
+            "breaks": [1, 2, 3, 4, 5, 6],
+            "labels": disc_labels,
+            "label": "Fluvial Flood",
+            "legend_title": "Fluvial Flood Hazard",
+        }
+
+    elif hn == "combined_flood":
+        return {
+            "type": "discrete",
+            "palette": flood_palette,
+            "breaks": [1, 2, 3, 4, 5, 6],
+            "labels": disc_labels,
+            "label": "Combined Flood",
+            "legend_title": "Combined Flood Hazard",
+        }
+
+    elif hn == "landslide":
         return {
             "type": "continuous",
             "cmap": "YlOrRd",
-            "label": "Landslide Susceptibility"
+            "label": "Landslide",
+            "legend_title": "Landslide Susceptibility",
         }
-    elif hazard_name == "earthquake":
+
+    elif hn == "earthquake":
         return {
             "type": "continuous",
             "cmap": "viridis",
-            "label": "Seismic Hazard"
+            "label": "Earthquake",
+            "legend_title": "Earthquake Intensity",
         }
-    elif hazard_name in ["pluvial_flood", "fluvial_flood", "combined_flood"]:
+
+    elif hn == "wildfire":
         return {
             "type": "continuous",
-            "cmap": custom_flood_cmap,
-            "label": hazard_name.replace("_", " ").title()
+            "cmap": "Reds",
+            "label": "Wildfire",
+            "legend_title": "Wildfire Density",
         }
-    else:
-        return {
-            "type": "continuous",
-            "cmap": "viridis",
-            "label": hazard_name.replace("_", " ").title()
-        }
+
+    # ----- DEFAULT / UNKNOWN -----
+    return {
+        "type": "continuous",
+        "cmap": "viridis",
+        "label": hazard_name.replace("_", " ").title() if hazard_name else "Hazard",
+        "legend_title": hazard_name.replace("_", " ").title() if hazard_name else "Hazard",
+    }
