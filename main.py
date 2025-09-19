@@ -18,7 +18,6 @@ from modules.flood_combination import process_combined_flood
 # from modules.drought_module import process_drought
 from modules.heat_module import process_heat
 from modules.wildfire_module import process_wildfire
-
 from modules.stats import (
     compute_infra_stats_from_results,
     compute_infra_stats_from_overlay,
