@@ -18,7 +18,7 @@ infrastructure_inputs:
 
 
 # Directory where all outputs will be saved
-output_dir: "../data/todelete"
+output_dir: "../data/heataj"
 
 
 # === Hazard Layers Configuration ===
@@ -51,5 +51,5 @@ hazards:
 
   heat:
     active: true
-    input: "../data/heat.nc"  # NetCDF file for heat hazard (e.g. Tmax)
-    threshold: 38
+    input: "../data/heat_tajikistan_2010_2024.nc"  # NetCDF file for heat hazard (e.g. Tmax)
+    threshold: 35
