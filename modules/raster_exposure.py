@@ -22,7 +22,6 @@ from modules.exposure_utils import extract_values_to_points, check_line_exposure
 from modules.plotting import plot_and_save_exposure_map, plot_initial_map_by_type
 from modules.crs_utils import assign_or_reproject_to_wgs84
 
-
 # -----------------------------
 # Small helpers
 # -----------------------------
@@ -53,6 +52,62 @@ def _ensure_exposed_bool(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     # But we still create the column to avoid schema issues.
     gdf["exposed"] = pd.Series(dtype=bool)
     return gdf
+
+def _clip_and_plot_raster_only(
+    hazard_name: str,
+    config: dict,
+    aoi: gpd.GeoDataFrame,
+    points_by_type: dict,
+    lines_by_type: dict,
+    raster_path: str,
+) -> dict:
+    """
+    Clip raster and display Network
+    """
+
+    raster_path_wgs84 = assign_or_reproject_to_wgs84(raster_path)
+
+    # Clip by AOI
+    with rasterio.open(raster_path_wgs84) as src:
+        geoms = [f["geometry"] for f in aoi.to_crs(src.crs).__geo_interface__["features"]]
+        clipped, transform = mask(src, geoms, crop=True)
+        meta = src.meta.copy()
+        meta.update({"height": clipped.shape[1], "width": clipped.shape[2], "transform": transform})
+
+    out_path = os.path.join(config["output_dir"], f"{hazard_name}_clipped.tif")
+    Path(config["output_dir"]).mkdir(parents=True, exist_ok=True)
+    with rasterio.open(out_path, "w", **meta) as dst:
+        dst.write(clipped)
+
+
+    all_points_dummy = (
+        gpd.GeoDataFrame(pd.concat(points_by_type.values(), ignore_index=True), crs=aoi.crs)
+        if points_by_type else _empty_gdf(aoi.crs)
+    )
+    all_lines_dummy = (
+        gpd.GeoDataFrame(pd.concat(lines_by_type.values(), ignore_index=True), crs=aoi.crs)
+        if lines_by_type else _empty_gdf(aoi.crs)
+    )
+    all_points_dummy["exposed"] = False
+    all_lines_dummy["exposed"] = False
+
+    plot_and_save_exposure_map(
+        aoi=aoi,
+        points=all_points_dummy,
+        lines=all_lines_dummy,
+        hazard_name=hazard_name,
+        output_dir=config["output_dir"],
+        raster_path=out_path,
+    )
+
+    # Normalized return payload
+    return {
+        "points_exposed": _ensure_exposed_bool(_empty_gdf(aoi.crs)),
+        "lines_exposed":  _ensure_exposed_bool(_empty_gdf(aoi.crs)),
+        "raster_path": out_path,
+        "threshold": None,
+    }
+
 
 
 # -----------------------------
@@ -107,52 +162,25 @@ def process_raster_exposures(config,
         # Skip inactive hazards and those handled by overlay modules elsewhere
         if not hazard_conf.get("active", False):
             continue
-        if hazard_name in ["drought", "heat", "wildfire"]:
+        if hazard_name in ["drought", "wildfire"]:
             # These hazards are handled by dedicated modules; we don't compute exposure here.
             continue
 
         # ---------------------------------------------
-        # Special case: earthquake → clip & map only
+        # Special case: earthquake + Heat → clip & map only
         # ---------------------------------------------
-        if hazard_name == "earthquake":
-            print(f"\n--- Clipping and saving earthquake raster ---")
+        RASTER_ONLY = {"earthquake", "heat"}  
+        if hazard_name in RASTER_ONLY:
             raster_path = hazard_conf["input"]
-            raster_path_wgs84 = assign_or_reproject_to_wgs84(raster_path)
-
-            # Clip by AOI
-            with rasterio.open(raster_path_wgs84) as src:
-                geoms = [f["geometry"] for f in aoi.to_crs(src.crs).__geo_interface__["features"]]
-                clipped, transform = mask(src, geoms, crop=True)
-                meta = src.meta.copy()
-                meta.update({"height": clipped.shape[1], "width": clipped.shape[2], "transform": transform})
-
-            out_path = os.path.join(config["output_dir"], "earthquake_clipped.tif")
-            Path(config["output_dir"]).mkdir(parents=True, exist_ok=True)
-            with rasterio.open(out_path, "w", **meta) as dst:
-                dst.write(clipped)
-
-            all_points_dummy = gpd.GeoDataFrame(pd.concat(points_by_type.values(), ignore_index=True), crs=aoi.crs) if points_by_type else                                                   _empty_gdf(aoi.crs)
-            all_lines_dummy  = gpd.GeoDataFrame(pd.concat(lines_by_type.values(),  ignore_index=True), crs=aoi.crs) if lines_by_type else                                                   _empty_gdf(aoi.crs)
-            all_points_dummy["exposed"] = False
-            all_lines_dummy["exposed"]  = False
-
-            plot_and_save_exposure_map(
+            exposure_results[hazard_name] = _clip_and_plot_raster_only(
+                hazard_name=hazard_name,
+                config=config,
                 aoi=aoi,
-                points=all_points_dummy,
-                lines=all_lines_dummy,
-                hazard_name="earthquake",
-                output_dir=config["output_dir"],
-                raster_path=out_path
+                points_by_type=points_by_type,
+                lines_by_type=lines_by_type,
+                raster_path=raster_path,
             )
-            # Normalized result with empty GDFs
-            exposure_results[hazard_name] = {
-                "points_exposed": _ensure_exposed_bool(_empty_gdf(aoi.crs)),
-                "lines_exposed":  _ensure_exposed_bool(_empty_gdf(aoi.crs)),
-                "raster_path": out_path,
-                "threshold": None
-            }
             continue
-
         # ---------------------------------------------
         # Standard raster-based hazards (e.g., pluvial_flood, fluvial_flood, landslide)
         # ---------------------------------------------

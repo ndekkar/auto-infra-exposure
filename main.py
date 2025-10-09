@@ -6,10 +6,8 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, List
-
 import geopandas as gpd
 import pandas as pd
-
 from modules.config_utils import load_config
 from modules.crs_utils import harmonize_crs
 from modules.plotting import plot_initial_map_by_type
@@ -195,7 +193,8 @@ def run_multi_hazard_pipeline(config_path: str):
                 lines_by_type=lines_by_type,
                 out_root=os.path.join(config["output_dir"], "stats")
             )
-
+    config["hazards"]["heat"]["input"] = str(heat_raster_path)
+    
     if _is_active(config, "wildfire"):
         wildfire_raster_path = process_wildfire(config)
         if wildfire_raster_path and Path(wildfire_raster_path).exists():

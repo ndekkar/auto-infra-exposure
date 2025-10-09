@@ -95,6 +95,14 @@ def get_hazard_display_spec(hazard_name: str):
             "label": "Wildfire",
             "legend_title": "Wildfire Density",
         }
+        
+    elif hn == "heat":
+        return {
+           "type": "continuous",
+           "cmap": "YlOrRd",         
+           "label": "Heat",
+           "legend_title": "Heat intensity ",
+    }
 
     # ----- DEFAULT / UNKNOWN -----
     return {

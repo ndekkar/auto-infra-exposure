@@ -25,27 +25,27 @@ output_dir: "../data/heataj"
 hazards:
 
   pluvial_flood:
-    active: true
+    active: false
     input: "../data/tajik/plu.tif"        # Raster input for pluvial flood
     threshold: 4                 # Threshold value for exposure
 
   fluvial_flood:
-    active: true
+    active: false
     input: "../data/tajik/flu.tif"        # Raster input for fluvial flood
     threshold: 6
 
   landslide:
-    active: true
+    active: false
     input: "../data/landslide.tif"  # Raster input for landslide
     threshold: 0.3
 
   earthquake:
-    active: true
+    active: false
     input: "../data/earthquacke.tif"    # Raster input for seismic hazard
     threshold: 0.5
 
   wildfire:
-    active: true
+    active: false
     input: "/Users/nassimdekkar/Downloads/GLOBFIRE_burned_area_full_dataset_2002_2023"  # Directory containing wildfire shapefiles
     threshold: 0.5  
 
