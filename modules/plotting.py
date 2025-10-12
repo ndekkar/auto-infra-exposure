@@ -159,8 +159,6 @@ def _merge_and_draw_legend(ax, spec, legend_raster_handles):
 
 
 
-
-
 def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
     """
     Add a styled raster overlay to a Matplotlib axis.
@@ -470,75 +468,98 @@ def plot_initial_map(aoi, points, lines, output_path=None):
         plt.show()
 
 
-def plot_initial_map_by_type(aoi, points_by_type, lines_by_type, output_path,
-                             *, raster_path=None, hazard_name=None):
+def plot_initial_map_by_type(
+    aoi, points_by_type, lines_by_type, output_path,
+    *, raster_path=None, hazard_name=None, frame_buffer: float = 0.03, basemap: bool = True
+):
     """
     Plot all infrastructure layers (points and lines) by type on a single map,
-    and optionally overlay a hazard raster (clipped to AOI) with a merged legend.
+    optionally overlaying a hazard raster (clipped to AOI), with a small frame
+    buffer around the extent to avoid tight-crop visual artifacts.
 
-    Parameters:
-        aoi (GeoDataFrame)
-        points_by_type (dict[str, GeoDataFrame])
-        lines_by_type (dict[str, GeoDataFrame])
-        output_path (str)
-        raster_path (str|None): optional hazard raster to overlay
-        hazard_name (str|None): required if raster_path is given; controls symbology + legend title
+    frame_buffer: percentage of width/height to add around the map frame (e.g., 0.03 = 3%)
     """
     fig, ax = plt.subplots(figsize=(12, 12))
 
-    # 0) Prepare hazard spec if a raster is provided
+    # 0) Hazard spec (if any)
     spec = get_hazard_display_spec(hazard_name) if (raster_path and hazard_name) else None
     legend_raster_handles = []
+    current_crs = aoi.crs  # will be set to raster CRS if a raster is used
+
+    xmin = ymin = xmax = ymax = None
 
     # 1) If raster provided: clip & draw it FIRST (under network)
     if raster_path and spec is not None:
         with rasterio.open(raster_path) as src:
-            geoms = [f["geometry"] for f in aoi.to_crs(src.crs).__geo_interface__["features"]]
+            current_crs = src.crs
+            # Mask raster by AOI in the raster CRS
+            aoi_proj = aoi.to_crs(current_crs)
+            geoms = [f["geometry"] for f in aoi_proj.__geo_interface__["features"]]
             masked_arr, transform = mask(src, geoms, crop=True, filled=False)
             masked_arr = masked_arr[0]
 
+        # Convert to a masked array (masked=True outside AOI)
         masked = np.ma.masked_array(masked_arr.data, mask=masked_arr.mask)
-        h, w = masked.shape
-        xmin, ymin, xmax, ymax = rasterio.transform.array_bounds(h, w, transform)
-        ax.set_xlim(xmin, xmax)
-        ax.set_ylim(ymin, ymax)
 
+        # --- AOI-based frame (NOT raster bounds) ---
+        xmin, ymin, xmax, ymax = aoi_proj.total_bounds
+        dx, dy = (xmax - xmin), (ymax - ymin)
+        bx, by = dx * float(frame_buffer), dy * float(frame_buffer)
+        ax.set_xlim(xmin - bx, xmax + bx)
+        ax.set_ylim(ymin - by, ymax + by)
+
+        # Raster extent still comes from the masked raster transform
+        h, w = masked.shape
+        rxmin, rymin, rxmax, rymax = rasterio.transform.array_bounds(h, w, transform)
+
+        # Draw raster with transparent "bad" (masked) pixels
         if spec["type"] == "continuous":
             vmin, vmax = float(masked.min()), float(masked.max())
+            cmap = plt.get_cmap(spec["cmap"]).copy()
+            cmap.set_bad(alpha=0)  # outside AOI fully transparent
             ax.imshow(
-                masked, cmap=spec["cmap"],
-                extent=(xmin, xmax, ymin, ymax),
+                masked, cmap=cmap,
+                extent=(rxmin, rxmax, rymin, rymax),
                 vmin=vmin, vmax=vmax, alpha=0.8, zorder=1
             )
-            legend_raster_handles = build_raster_legend_handles(spec, data_masked=masked, vmin=vmin, vmax=vmax)
+            legend_raster_handles = build_raster_legend_handles(
+                spec, data_masked=masked, vmin=vmin, vmax=vmax
+            )
         else:
             cmap = ListedColormap(spec["palette"])
+            cmap.set_bad((0, 0, 0, 0))
             norm = BoundaryNorm(spec["breaks"], len(spec["palette"]))
             ax.imshow(
                 masked, cmap=cmap, norm=norm,
-                extent=(xmin, xmax, ymin, ymax),
+                extent=(rxmin, rxmax, rymin, rymax),
                 origin="upper", alpha=0.8, zorder=1
             )
             legend_raster_handles = build_raster_legend_handles(spec, data_masked=masked)
 
     else:
-        # No raster: set view to AOI bounds
+        # No raster: set view to AOI bounds + buffer (in AOI CRS)
         xmin, ymin, xmax, ymax = aoi.total_bounds
-        ax.set_xlim(xmin, xmax)
-        ax.set_ylim(ymin, ymax)
+        dx, dy = (xmax - xmin), (ymax - ymin)
+        bx, by = dx * float(frame_buffer), dy * float(frame_buffer)
+        ax.set_xlim(xmin - bx, xmax + bx)
+        ax.set_ylim(ymin - by, ymax + by)
 
-    # 2) Basemap under everything
-    try:
-        ctx.add_basemap(ax, crs=aoi.crs.to_string(),
-                        source=ctx.providers.CartoDB.Positron,
-                        attribution_size=6, zorder=0)
-    except Exception as e:
-        print(f"[!] Could not load basemap: {e}")
+    # 2) Basemap under everything (use the *current* CRS of the axis)
+    if basemap:
+        try:
+            ctx.add_basemap(
+                ax, crs=current_crs.to_string(),
+                source=ctx.providers.CartoDB.Positron,
+                attribution_size=6, zorder=0
+            )
+        except Exception as e:
+            print(f"[!] Could not load basemap: {e}")
 
-    # 3) AOI boundary (no legend)
-    aoi.boundary.plot(ax=ax, color="black", linewidth=1, label="_nolegend_", zorder=2)
+    # 3) AOI boundary (no legend) — reproject to current_crs if needed
+    aoi_to_plot = aoi if aoi.crs == current_crs else aoi.to_crs(current_crs)
+    aoi_to_plot.boundary.plot(ax=ax, color="black", linewidth=1, label="_nolegend_", zorder=2)
 
-    # 4) Custom styles
+    # 4) Styles
     custom_point_styles = {
         "substations": {"color": "#b2df8a", "marker": "^", "label": "Substation"},
         "transformer": {"color": "black", "marker": "o", "label": "Transformer"},
@@ -551,7 +572,7 @@ def plot_initial_map_by_type(aoi, points_by_type, lines_by_type, output_path,
         "existing": {"color": "black", "linestyle": "--", "linewidth": 1.5, "label": "Existing line"},
     }
 
-    # 5) Draw lines by type (below points)
+    # 5) Draw lines by type (below points) — reproject if needed
     used_labels = set()
     def _label_once(lbl: str) -> str:
         if lbl in used_labels:
@@ -562,19 +583,27 @@ def plot_initial_map_by_type(aoi, points_by_type, lines_by_type, output_path,
     for name, gdf in (lines_by_type or {}).items():
         if gdf is None or gdf.empty:
             continue
-        style = custom_line_styles.get(name, {"color": "gray", "linestyle": "-", "linewidth": 1.0, "label": f"Line: {name}"})
-        gdf.plot(ax=ax,
-                 color=style["color"], linestyle=style["linestyle"], linewidth=style["linewidth"],
-                 label=_label_once(style["label"]), zorder=3)
+        gdfp = gdf if gdf.crs == current_crs else gdf.to_crs(current_crs)
+        style = custom_line_styles.get(
+            name, {"color": "gray", "linestyle": "-", "linewidth": 1.0, "label": f"Line: {name}"}
+        )
+        gdfp.plot(
+            ax=ax,
+            color=style["color"], linestyle=style["linestyle"], linewidth=style["linewidth"],
+            label=_label_once(style["label"]), zorder=3
+        )
 
-    # 6) Draw points by type (on top of lines)
+    # 6) Draw points by type (on top of lines) — reproject if needed
     for name, gdf in (points_by_type or {}).items():
         if gdf is None or gdf.empty:
             continue
+        gdfp = gdf if gdf.crs == current_crs else gdf.to_crs(current_crs)
         style = custom_point_styles.get(name, {"color": "gray", "marker": "o", "label": f"Point: {name}"})
-        gdf.plot(ax=ax,
-                 color=style["color"], marker=style["marker"], markersize=30,
-                 label=_label_once(style["label"]), zorder=5)
+        gdfp.plot(
+            ax=ax,
+            color=style["color"], marker=style["marker"], markersize=30,
+            label=_label_once(style["label"]), zorder=5
+        )
 
     # 7) Final formatting + merged legend
     ax.set_axis_off()

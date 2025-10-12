@@ -21,32 +21,40 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 from modules.plotting import add_scalebar, add_north_arrow
 
 
-# ---------- small utils ----------
 
 def _to_celsius(da, convert_kelvin=True):
-    """Convert to °C if units are Kelvin or values look like Kelvin."""
+    """
+    Ensure the DataArray is in degrees Celsius.
+
+    - If units are Kelvin (or values look like Kelvin), convert to °C.
+    - Always set attrs['units'] = 'degC' on the returned DataArray.
+    """
     if not convert_kelvin:
+        # Still normalize the units attribute if missing
+        if not da.attrs.get("units"):
+            da.attrs["units"] = "degC"
         return da
+
     units = (da.attrs.get("units") or "").lower()
     if units in ("k", "kelvin"):
         out = da - 273.15
         out.attrs["units"] = "degC"
         return out
-    # heuristic: Kelvin values ~200–330
+
+    # Heuristic: if first value looks like Kelvin (>150), convert
     try:
-        # peek a value deterministically (first index of first dim)
-        first_dim = list(da.dims)[0]
-        v = float(da.isel({first_dim: 0}).values)
+        v = float(np.asarray(da.values).ravel()[0])
         if v > 150:
             out = da - 273.15
             out.attrs["units"] = "degC"
             return out
     except Exception:
         pass
-    # assume already in °C
-    if "units" not in da.attrs or not da.attrs["units"]:
-        da.attrs["units"] = "degC"
+
+    # Assume already in Celsius
+    da.attrs["units"] = "degC"
     return da
+
 
 
 def _get_time_dim(dataarray):
@@ -57,7 +65,7 @@ def _get_time_dim(dataarray):
     raise ValueError("No time coordinate found (expected 'time' or 'valid_time').")
 
 
-# ---------- public API ----------
+
 
 def process_heat(config):
     """
@@ -89,35 +97,47 @@ def compute_heat_statistics(nc_path, convert_kelvin=True, threshold=29):
     Compute annual heat statistics from a NetCDF file.
 
     Returns:
-        DataFrame: Annual stats with columns 'Year', 'Tmax', 'HotD'.
+        DataFrame with columns:
+          - 'Year' (int)
+          - 'Tmax' (float, °C): annual maximum of daily Tmax
+          - 'HotD' (int, days): count of days with Tmax >= threshold (°C)
     """
     variable = "t2m"
     ds = xr.open_dataset(nc_path)
-    data = _to_celsius(ds[variable], convert_kelvin=convert_kelvin)
 
-    # safer time handling
-    df = data.to_dataframe().reset_index()
-    time_col = "valid_time" if "valid_time" in df.columns else "time" if "time" in df.columns else None
+    # 1) Convert to Celsius and give an explicit name to avoid confusion
+    data = _to_celsius(ds[variable], convert_kelvin=convert_kelvin)
+    data.name = "t2m_c"  # explicit Celsius variable name
+
+    # 2) Flatten to a DataFrame; keep a robust time column name
+    df = data.to_dataframe(name="t2m_c").reset_index()
+    time_col = "valid_time" if "valid_time" in df.columns else ("time" if "time" in df.columns else None)
     if time_col is None:
         raise ValueError("No time column found after to_dataframe().")
-
     df["date"] = pd.to_datetime(df[time_col]).dt.date
 
-    # daily Tmax over grid (then aggregate per year)
-    daily_max = df.groupby("date")[variable].max().reset_index()
+    # 3) Daily Tmax over the AOI/grid (max across all pixels for each day)
+    daily_max = df.groupby("date")["t2m_c"].max().reset_index()
     daily_max.columns = ["date", "Tmax"]
     daily_max["Year"] = pd.to_datetime(daily_max["date"]).dt.year
 
-    # keep only years with enough coverage (>= 180 days) to avoid winter-only bias
+    # 4) Keep only years with enough coverage (>= 180 days) to avoid bias
     day_counts = daily_max.groupby("Year")["date"].count().rename("n_days")
+
+    # 5) Annual stats:
+    #    - Tmax: maximum daily Tmax within the year (°C)
+    #    - HotD: number of days with Tmax >= threshold (°C)
     annual_stats = daily_max.groupby("Year").agg(
         Tmax=("Tmax", "max"),
-        HotD=("Tmax", lambda x: (x >= threshold).sum())
+        HotD=("Tmax", lambda x: (x >= float(threshold)).sum())
     ).reset_index()
+
+    # 6) Filter by coverage and years in scope
     annual_stats = annual_stats.merge(day_counts, on="Year")
     annual_stats = annual_stats[annual_stats["n_days"] >= 180][["Year", "Tmax", "HotD"]]
 
     return annual_stats[annual_stats["Year"] >= 1960]
+
 
 
 def plot_heat_statistics(annual_stats, output_dir, threshold=29):

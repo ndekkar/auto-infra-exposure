@@ -3,7 +3,7 @@
 # Path to the Area of Interest (AOI) shapefile
 aoi: "../data/tajik/aoi.shp"
 
-# Path to infrastructure points (e.g. substations, power plants)
+# Path to infrastructure 
 infrastructure_inputs:
   points:
     transformer: "../data/tajik/TJK_Transformers.shp"
@@ -18,7 +18,7 @@ infrastructure_inputs:
 
 
 # Directory where all outputs will be saved
-output_dir: "../data/heataj"
+output_dir: "../data/test"
 
 
 # === Hazard Layers Configuration ===
@@ -26,22 +26,22 @@ hazards:
 
   pluvial_flood:
     active: false
-    input: "../data/tajik/plu.tif"        # Raster input for pluvial flood
-    threshold: 4                 # Threshold value for exposure
+    input: "../data/tajik/plu.tif"        
+    threshold: 4                
 
   fluvial_flood:
     active: false
-    input: "../data/tajik/flu.tif"        # Raster input for fluvial flood
+    input: "../data/tajik/flu.tif"       
     threshold: 6
 
   landslide:
     active: false
-    input: "../data/landslide.tif"  # Raster input for landslide
+    input: "../data/landslide.tif"  
     threshold: 0.3
 
   earthquake:
     active: false
-    input: "../data/earthquacke.tif"    # Raster input for seismic hazard
+    input: "../data/earthquacke.tif"   
     threshold: 0.5
 
   wildfire:

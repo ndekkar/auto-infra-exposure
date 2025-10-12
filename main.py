@@ -193,7 +193,7 @@ def run_multi_hazard_pipeline(config_path: str):
                 lines_by_type=lines_by_type,
                 out_root=os.path.join(config["output_dir"], "stats")
             )
-    config["hazards"]["heat"]["input"] = str(heat_raster_path)
+            config["hazards"]["heat"]["input"] = str(heat_raster_path)
     
     if _is_active(config, "wildfire"):
         wildfire_raster_path = process_wildfire(config)
