@@ -65,12 +65,12 @@ def get_hazard_display_spec(hazard_name: str):
     elif hn == "combined_flood":
         return {
             "type": "discrete",
-            "palette": flood_palette,
-            "breaks": [1, 2, 3, 4, 5, 6],
-            "labels": disc_labels,
-            "label": "Combined Flood",
-            "legend_title": "Combined Flood Hazard",
+            "breaks": [0.0, 0.3, 1.0, 2.0, float("inf")],
+            "palette": ["#e0f3ff", "#9ec9ff", "#5596ff", "#08306b"],
+            "labels": ["Low (≤0.3 m)", "Medium (0.3–1 m)", "High (1–2 m)", "Very High (>2 m)"],
+            "legend_title": "Combined Flood Hazard"
         }
+        
 
     elif hn == "landslide":
         return {
@@ -83,9 +83,9 @@ def get_hazard_display_spec(hazard_name: str):
     elif hn == "earthquake":
         return {
             "type": "continuous",
-            "cmap": "viridis",
+            "cmap": "plasma",
             "label": "Earthquake",
-            "legend_title": "Earthquake Intensity",
+            "legend_title": "Peak Ground Acceleration (g)",
         }
 
     elif hn == "wildfire":
@@ -101,7 +101,17 @@ def get_hazard_display_spec(hazard_name: str):
            "type": "continuous",
            "cmap": "YlOrRd",         
            "label": "Heat",
-           "legend_title": "Heat intensity ",
+           "legend_title": "Heat intensity",
+    }
+
+    elif hn == "cold":
+        return {
+            "type": "continuous",
+            "cmap": "YlGnBu_r",
+            "label": "Cold",
+            "legend_title": "Cold Intensity",
+            "risk_direction": "lower_is_worse", 
+            "labels": ["Very low", "Low", "Medium", "High", "Very high"],
     }
 
     # ----- DEFAULT / UNKNOWN -----

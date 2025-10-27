@@ -18,31 +18,31 @@ infrastructure_inputs:
 
 
 # Directory where all outputs will be saved
-output_dir: "../data/test"
+output_dir: "../data/testoct"
 
 
 # === Hazard Layers Configuration ===
 hazards:
 
   pluvial_flood:
-    active: false
+    active: true
     input: "../data/tajik/plu.tif"        
     threshold: 4                
 
   fluvial_flood:
-    active: false
+    active: true
     input: "../data/tajik/flu.tif"       
     threshold: 6
 
   landslide:
-    active: false
+    active: true
     input: "../data/landslide.tif"  
     threshold: 0.3
 
   earthquake:
-    active: false
+    active: true
     input: "../data/earthquacke.tif"   
-    threshold: 0.5
+    threshold: 0.3
 
   wildfire:
     active: false
@@ -53,3 +53,8 @@ hazards:
     active: true
     input: "../data/heat_tajikistan_2010_2024.nc"  # NetCDF file for heat hazard (e.g. Tmax)
     threshold: 35
+
+  cold:
+    active: true
+    input: "../data/hazards/cold/TNn_mean_2010_2024.tif"
+    threshold: -20

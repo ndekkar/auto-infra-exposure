@@ -211,7 +211,6 @@ def compute_infra_stats_from_results(
 ) -> dict:
     """
     Aggregate infrastructure stats from ALREADY-EXPOSED feature layers.
-    This does NOT touch rasters; it only consumes your exposure results.
 
     Outputs (under output/stats/<hazard>/):
       <hazard>_points_exposure.csv

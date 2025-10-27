@@ -16,6 +16,7 @@ from modules.flood_combination import process_combined_flood
 # from modules.drought_module import process_drought
 from modules.heat_module import process_heat
 from modules.wildfire_module import process_wildfire
+from modules.cold_module import process_cold
 from modules.stats import (
     compute_infra_stats_from_results,
     compute_infra_stats_from_overlay,
@@ -209,6 +210,23 @@ def run_multi_hazard_pipeline(config_path: str):
                 out_root=os.path.join(config["output_dir"], "stats")
             )
 
+
+       
+    if _is_active(config, "cold"):
+        cold_outputs = process_cold(config)  
+        cold_raster_path = (config.get("hazards", {}).get("cold", {}) or {}).get("input")
+        if cold_raster_path and Path(cold_raster_path).exists():
+            compute_infra_stats_from_overlay(
+                hazard_name="cold",
+                raster_path=cold_raster_path,
+                aoi_gdf=aoi,
+                all_points_gdf=all_points,
+                all_lines_gdf=all_lines,
+                points_by_type=points_by_type,
+                lines_by_type=lines_by_type,
+                out_root=os.path.join(config["output_dir"], "stats")
+            )
+    
     if _is_active(config, "earthquake"):
         eq_path = (config.get("hazards", {}).get("earthquake", {}) or {}).get("input")
         if eq_path and Path(eq_path).exists():

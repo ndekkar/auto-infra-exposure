@@ -169,7 +169,7 @@ def process_raster_exposures(config,
         # ---------------------------------------------
         # Special case: earthquake + Heat → clip & map only
         # ---------------------------------------------
-        RASTER_ONLY = {"earthquake", "heat"}  
+        RASTER_ONLY = {"earthquake", "heat", "cold"}  
         if hazard_name in RASTER_ONLY:
             raster_path = hazard_conf["input"]
             exposure_results[hazard_name] = _clip_and_plot_raster_only(
