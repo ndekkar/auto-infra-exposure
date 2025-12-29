@@ -1,16 +1,17 @@
 
-## Multi-Hazard Infrastructure Exposure Pipeline
+# Multi-Hazard Infrastructure Exposure Pipeline
 
-This project implements a multi-hazard exposure assessment pipeline for critical infrastructure (e.g., power lines and substations). It processes geospatial data from various hazards such as floods, droughts, heatwaves, wildfires, earthquakes, and landslides, and generates both analytical outputs and maps.
+End-to-end geospatial pipeline for assessing infrastructure exposure to multiple hazards(floods, landslides, heat, wildfire, drought, cold, earthquakes). The workflow ingestsAOI boundaries, infrastructure assets (points and lines), and hazard rasters, then produces exposure layers, maps, and summary statistics.
 
 ---
 
-## Features
+## Key Features
 
-- Multi-hazard exposure analysis (flood, landslide, earthquake, drought, wildfire, heat)
-- Configurable via a single YAML file
-- Infrastructure exposure for both point and line features
-- Automated map generation for each hazard
+- **Multi-hazard exposure analysis** (flood, landslide, earthquake, drought, wildfire, heat, cold)
+- **Single YAML configuration** for inputs, outputs, and hazard toggles
+- **Point and line infrastructure support**
+- **Automated map generation** per hazard
+- **Stats outputs** from either exposure shapefiles or raster overlays
 
 ---
 
@@ -20,14 +21,19 @@ This project implements a multi-hazard exposure assessment pipeline for critical
 - Pluvial Flood
 - Combined Flood
 - Landslide
-- Earthquake
-- Drought 
+- Earthquake 
 - Heat 
 - Wildfire
+- Cold
 
 ## Installation
-### 1. Clone the repository
-### 2. Create a virtual environment
-### 3. Install required packages
+### 1) Clone the repository
+### 2) Create and activate a virtual environment
+### 3) Install dependencies
+```
 pip install -r requirements.txt
+```
+## Configuration
+Edit `config.yml` to point to your data inputs and outputs.
+
 

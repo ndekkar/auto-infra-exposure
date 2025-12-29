@@ -349,7 +349,7 @@ def process_raster_exposures(
         else:
             raster_path_for_plot = raster_path_wgs84
 
-        # PNG avec fond raster (low-res si AOI énorme)
+        
         plot_and_save_exposure_map(
             aoi=aoi,
             points=points_exposed,
