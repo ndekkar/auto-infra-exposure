@@ -75,7 +75,7 @@ def get_hazard_display_spec(hazard_name: str):
     elif hn == "landslide":
         return {
             "type": "continuous",
-            "cmap": "YlOrRd",
+            "cmap": "magma",
             "label": "Landslide",
             "legend_title": "Landslide Susceptibility",
         }
@@ -85,7 +85,7 @@ def get_hazard_display_spec(hazard_name: str):
             "type": "continuous",
             "cmap": "plasma",
             "label": "Earthquake",
-            "legend_title": "Peak Ground Acceleration (g)",
+            "legend_title": "PGA",
         }
 
     elif hn == "wildfire":

@@ -3,6 +3,9 @@
 # Path to the Area of Interest (AOI) shapefile
 aoi: "../data/tajik/aoi.shp"
 
+dem:
+  input: "../data/tajik/dem_tjk.tif"
+
 # Path to infrastructure 
 infrastructure_inputs:
   points:
@@ -18,29 +21,29 @@ infrastructure_inputs:
 
 
 # Directory where all outputs will be saved
-output_dir: "../data/testoct"
+output_dir: "../data/refacto"
 
 
 # === Hazard Layers Configuration ===
 hazards:
 
   pluvial_flood:
-    active: true
+    active: false
     input: "../data/tajik/plu.tif"        
-    threshold: 4                
+    threshold: 0.3                
 
   fluvial_flood:
-    active: true
+    active: false
     input: "../data/tajik/flu.tif"       
-    threshold: 6
+    threshold: 0.5
 
   landslide:
-    active: true
+    active: false
     input: "../data/landslide.tif"  
     threshold: 0.3
 
   earthquake:
-    active: true
+    active: false
     input: "../data/earthquacke.tif"   
     threshold: 0.3
 
@@ -50,11 +53,12 @@ hazards:
     threshold: 0.5  
 
   heat:
-    active: true
-    input: "../data/heat_tajikistan_2010_2024.nc"  # NetCDF file for heat hazard (e.g. Tmax)
+    active: false
+    input: "../data/heat/heat_tajikistan_2010_2024.nc"  # NetCDF file for heat hazard (e.g. Tmax)
     threshold: 35
 
   cold:
     active: true
     input: "../data/hazards/cold/TNn_mean_2010_2024.tif"
     threshold: -20
+    fd_input: "../data/hazards/cold/FD_mean_2010_2024_TAJ.tif"   # <- optionnel

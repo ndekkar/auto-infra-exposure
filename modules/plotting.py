@@ -3,7 +3,7 @@ Plotting utilities for visualizing hazard exposure maps.
 
 This module provides functions to:
 - Add raster overlays (continuous or discrete) with custom symbology.
-- Safely plot GeoDataFrames if not empty.
+- Safely plot GeoDataFrames if not empty.plot_initial_map_by_type
 - Generate and save infrastructure exposure maps with background basemap.
 """
 
@@ -15,6 +15,7 @@ import rasterio
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
+import textwrap
 from rasterio.mask import mask
 from matplotlib.colors import ListedColormap, BoundaryNorm, Normalize
 from matplotlib.cm import ScalarMappable
@@ -31,6 +32,7 @@ from matplotlib.text import Text
 from pathlib import Path
 from rasterio.enums import Resampling
 from rasterio.plot import reshape_as_image
+from pyproj import Geod
 
 # ---- Flood classification spec (depth in meters) ----
 FLOOD_BREAKS = [0.0, 0.3, 1.0, 2.0, np.inf]
@@ -130,7 +132,11 @@ def render_flood_raster_styled(
         ax.legend(handles=legend_handles, title="Flood hazard (depth)", loc="lower left")
         ax.set_xlim(extent[0], extent[1])
         ax.set_ylim(extent[2], extent[3])
+        # --- scale bar + north arrow ---
+        add_scalebar(ax)
+       
         plt.tight_layout()
+        add_north_arrow(ax)
         if out_png:
             Path(out_png).parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(out_png, dpi=200, bbox_inches="tight")
@@ -198,6 +204,9 @@ def build_raster_legend_handles(spec, data_masked=None, vmin=None, vmax=None,  l
         handles.append(Patch(facecolor=cmap(norm(c)), edgecolor="none", label=lbl))
     return handles
 
+
+
+
 def _merge_and_draw_legend(ax, spec, legend_raster_handles):
     handles, labels = ax.get_legend_handles_labels()
     handler_map = {}
@@ -229,13 +238,17 @@ def _merge_and_draw_legend(ax, spec, legend_raster_handles):
         handler_map=handler_map
     )
 
+
+
+
 def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
     """
     Add a styled raster overlay to a Matplotlib axis.
     """
     spec = get_hazard_display_spec(hazard_name)
     with rasterio.open(raster_path) as src:
-        aoi_proj = aoi.to_crs(src.crs)
+        raster_crs = src.crs or aoi.crs or CRS.from_epsg(4326)
+        aoi_proj = aoi.to_crs(raster_crs)
         geometries = [feat["geometry"] for feat in aoi_proj.__geo_interface__["features"]]
         out_image, out_transform = mask(
             src,
@@ -288,6 +301,36 @@ def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
         _merge_and_draw_legend(ax, {"legend_title": "Landslide"}, legend_handles)
         return extent
 
+
+    # Wildfire: continuous raster but legend merged as 5 bins (no side colorbar)
+    if hazard_name == "wildfire" and spec.get("type") == "continuous":
+        # Treat zeros as background (transparent) for heatmap-style rendering
+        masked2 = np.ma.masked_where((masked.mask) | (masked <= 0), masked)
+        if masked2.count() > 0:
+            vmin = float(masked2.min())
+            vmax = float(masked2.max())
+        else:
+            vmin = 0.0
+            vmax = 1.0
+
+        cmap = plt.get_cmap(spec.get("cmap", "Reds")).copy()
+        cmap.set_bad(alpha=0)
+
+        ax.imshow(
+            masked2,
+            cmap=cmap,
+            extent=extent,
+            vmin=vmin,
+            vmax=vmax,
+            origin="upper",
+            alpha=0.9
+        )
+        legend_handles = build_raster_legend_handles(
+            spec, data_masked=masked2, vmin=vmin, vmax=vmax
+        )
+        _merge_and_draw_legend(ax, {"legend_title": "Wildfire"}, legend_handles)
+        return extent
+
     # Seismic: discrete PGA classes in merged legend
     if spec.get("type") == "continuous" and (hazard_name in SEISMIC_NAMES):
         palette = _seismic_palette(spec.get("cmap", "plasma_r"))
@@ -298,7 +341,7 @@ def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
             extent=extent, origin="upper", alpha=0.85
         )
         legend_handles = [Patch(facecolor=palette[i], label=SEISMIC_LABELS[i]) for i in range(len(palette))]
-        _merge_and_draw_legend(ax, {"legend_title": "Seismic Hazard — PGA (g)"}, legend_handles)
+        _merge_and_draw_legend(ax, {"legend_title": "PGA"}, legend_handles)
         return extent
 
     # Generic continuous / discrete (kept for other hazards)
@@ -343,6 +386,7 @@ def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
         cbar.set_label(spec["label"])
     return extent
 
+
 def plot_and_save_exposure_map(
     aoi,
     points,
@@ -375,8 +419,8 @@ def plot_and_save_exposure_map(
                      "facecolor": "none", "edgecolor": "#1f78b4", "linewidth": 0.9},
     }
     custom_line_styles = {
-        "hv": {"color": "yellow", "linestyle": "-", "linewidth": 2.5, "label": "High transmission line"},
-        "lv": {"color": "#970499", "linestyle": "-", "linewidth": 1.5, "label": "Low transmission line"},
+        "hv": {"color": "yellow", "linestyle": "-", "linewidth": 2.5, "label": "HV line"},
+        "lv": {"color": "#970499", "linestyle": "-", "linewidth": 1.5, "label": "LV line"},
         "existing": {"color": "black", "linestyle": "--", "linewidth": 1.5, "label": "Existing line"},
     }
 
@@ -401,15 +445,23 @@ def plot_and_save_exposure_map(
     ax.set_ylim(min(ymin, ymax), max(ymin, ymax))
 
     try:
-        ctx.add_basemap(ax, crs=aoi.crs.to_string(), source=ctx.providers.CartoDB.Positron, attribution_size=6, zorder=0)
+        ctx.add_basemap(
+            ax,
+            crs=aoi.crs.to_string(),
+            source=ctx.providers.CartoDB.Positron,
+            attribution_size=6,
+            zorder=0,
+        )
     except Exception as e:
         print(f"[!] Could not add basemap: {e}")
 
+    # ===================== RASTER ==========================
     if masked is not None:
+        # HEAT
         if hazard_name in {"heat", "temperature", "t2m", "era5_heat"}:
             classes = _classify_heat_degC(masked)
             cmap = ListedColormap(["none"] + HEAT_COLORS)
-            norm = BoundaryNorm(range(0, len(HEAT_COLORS)+1), len(HEAT_COLORS)+1)
+            norm = BoundaryNorm(range(0, len(HEAT_COLORS) + 1), len(HEAT_COLORS) + 1)
             ax.imshow(
                 classes,
                 cmap=cmap,
@@ -419,11 +471,16 @@ def plot_and_save_exposure_map(
                 alpha=0.9,
                 zorder=1,
             )
-            legend_raster_handles = [Patch(facecolor=HEAT_COLORS[i], label=HEAT_LABELS[i]) for i in range(len(HEAT_COLORS))]
+            legend_raster_handles = [
+                Patch(facecolor=HEAT_COLORS[i], label=HEAT_LABELS[i])
+                for i in range(len(HEAT_COLORS))
+            ]
+
+        # COLD
         elif hazard_name in {"cold", "tnn", "era5_cold", "cold_extreme"}:
             classes = _classify_cold_degC(masked)
             cmap = ListedColormap(["none"] + COLD_COLORS)
-            norm = BoundaryNorm(range(0, len(COLD_COLORS)+1), len(COLD_COLORS)+1)
+            norm = BoundaryNorm(range(0, len(COLD_COLORS) + 1), len(COLD_COLORS) + 1)
             ax.imshow(
                 classes,
                 cmap=cmap,
@@ -433,9 +490,14 @@ def plot_and_save_exposure_map(
                 alpha=0.9,
                 zorder=1,
             )
-            legend_raster_handles = [Patch(facecolor=COLD_COLORS[i], label=COLD_LABELS[i]) for i in range(len(COLD_COLORS))]
+            legend_raster_handles = [
+                Patch(facecolor=COLD_COLORS[i], label=COLD_LABELS[i])
+                for i in range(len(COLD_COLORS))
+            ]
+
+        # FLOOD
         elif hazard_name in {"pluvial_flood", "fluvial_flood", "combined_flood"}:
-            flood_src = masked.astype("float32")           # ensure float dtype
+            flood_src = masked.astype("float32")  # ensure float dtype
             classes = classify_flood_depth_array(np.ma.filled(flood_src, np.nan), nodata_val)
             flood_cmap = ListedColormap(["none"] + FLOOD_COLORS)
             ax.imshow(
@@ -452,6 +514,8 @@ def plot_and_save_exposure_map(
                 Patch(facecolor=FLOOD_COLORS[2], label=FLOOD_LABELS[2]),
                 Patch(facecolor=FLOOD_COLORS[3], label=FLOOD_LABELS[3]),
             ]
+
+        # LANDSLIDE (continuous, with discrete legend)
         elif hazard_name == "landslide" and spec.get("type") == "continuous":
             vmin, vmax = float(masked.min()), float(masked.max())
             ax.imshow(
@@ -466,8 +530,11 @@ def plot_and_save_exposure_map(
             legend_raster_handles = build_raster_legend_handles(
                 spec, data_masked=masked, vmin=vmin, vmax=vmax
             )
+
+        # OTHER HAZARDS (continuous / discrete)
         else:
             if spec["type"] == "continuous":
+                # SEISMIC (earthquake, etc.)
                 if hazard_name in SEISMIC_NAMES:
                     palette = _seismic_palette(spec.get("cmap", "plasma_r"))
                     cmap = ListedColormap(palette)
@@ -481,7 +548,58 @@ def plot_and_save_exposure_map(
                         alpha=0.85,
                         zorder=1,
                     )
-                    legend_raster_handles = [Patch(facecolor=palette[i], label=SEISMIC_LABELS[i]) for i in range(len(palette))]
+                    legend_raster_handles = [
+                        Patch(facecolor=palette[i], label=SEISMIC_LABELS[i])
+                        for i in range(len(palette))
+                    ]
+
+                # DEM – continuous raster but we want discrete legend, no colorbar
+                elif hazard_name == "dem":
+                    vmin, vmax = float(masked.min()), float(masked.max())
+                    ax.imshow(
+                        masked,
+                        cmap=spec["cmap"],
+                        extent=(xmin, xmax, ymin, ymax),
+                        vmin=vmin,
+                        vmax=vmax,
+                        alpha=0.8,
+                        zorder=1,
+                    )
+                    
+                    legend_raster_handles = build_raster_legend_handles(
+                        spec, data_masked=masked, vmin=vmin, vmax=vmax
+                    )
+
+                # Wildfire – continuous heatmap but legend merged (no side colorbar)
+                elif hazard_name == "wildfire":
+                    masked2 = np.ma.masked_where((masked.mask) | (masked <= 0), masked)
+                    if masked2.count() > 0:
+                        vmin, vmax = float(masked2.min()), float(masked2.max())
+                    else:
+                        vmin, vmax = 0.0, 1.0
+
+                    cmap = plt.get_cmap(spec.get("cmap", "Reds")).copy()
+                    cmap.set_bad(alpha=0)
+
+                    ax.imshow(
+                        masked2,
+                        cmap=cmap,
+                        extent=(xmin, xmax, ymin, ymax),
+                        vmin=vmin,
+                        vmax=vmax,
+                        origin="upper",
+                        alpha=0.9,
+                        zorder=1,
+                    )
+
+                    legend_raster_handles = build_raster_legend_handles(
+                        spec, data_masked=masked2, vmin=vmin, vmax=vmax
+                    )
+
+                    spec = {**spec, "legend_title": "Wildfire"}
+
+
+                # Generic continuous hazard: keep colorbar
                 else:
                     vmin, vmax = float(masked.min()), float(masked.max())
                     im = ax.imshow(
@@ -500,11 +618,11 @@ def plot_and_save_exposure_map(
                     cbar = plt.colorbar(sm, cax=cax)
                     cbar.set_label(spec["label"])
                     cbar.set_ticks([vmin, vmax])
-                    cbar.set_ticklabels(['Low', 'High'])
+                    cbar.set_ticklabels(["Low", "High"])
             else:
                 cmap = ListedColormap(spec["palette"])
                 norm = BoundaryNorm(spec["breaks"], len(spec["palette"]))
-                im = ax.imshow(
+                ax.imshow(
                     masked,
                     cmap=cmap,
                     norm=norm,
@@ -513,23 +631,107 @@ def plot_and_save_exposure_map(
                     alpha=0.8,
                     zorder=1,
                 )
-                legend_raster_handles = build_raster_legend_handles(spec, data_masked=masked)
+                legend_raster_handles = build_raster_legend_handles(
+                    spec, data_masked=masked
+                )
 
+    # ===================== VECTORS ==========================
     aoi.boundary.plot(ax=ax, color="black", linewidth=1, zorder=2, label="_nolegend_")
 
     used_labels = set()
+
     def _label_once(lbl: str) -> str:
         if lbl in used_labels:
             return "_nolegend_"
         used_labels.add(lbl)
         return lbl
 
+    # ---------- SPECIAL CASE: DEM CONTEXT MAP ----------
+    if hazard_name == "dem":
+        # Lines (all)
+        if (lines is not None) and (len(lines) > 0):
+            type_col = "infra_type" if "infra_type" in lines.columns else ("type" if "type" in lines.columns else None)
+            if type_col is not None:
+                for ln_type in lines[type_col].unique():
+                    lns = lines[lines[type_col] == ln_type]
+                    style = custom_line_styles.get(
+                        ln_type,
+                        {"color": "gray", "linestyle": "-", "linewidth": 1.5, "label": ln_type},
+                    )
+                    safe_plot(
+                        lns,
+                        ax,
+                        color=style["color"],
+                        linestyle=style["linestyle"],
+                        linewidth=style["linewidth"],
+                        label=_label_once(style["label"]),
+                        zorder=3,
+                    )
+
+        # Points (all) — skip towers; hollow subs/transformers
+        if (points is not None) and (len(points) > 0):
+            type_col = "infra_type" if "infra_type" in points.columns else ("type" if "type" in points.columns else None)
+            if type_col is not None:
+                for pt_type in points[type_col].unique():
+                    if pt_type == "tower":
+                        continue
+                    pts = points[points[type_col] == pt_type]
+                    style = custom_point_styles.get(
+                        pt_type,
+                        {
+                            "marker": "o",
+                            "label": pt_type,
+                            "facecolor": "none",
+                            "edgecolor": "#666666",
+                            "linewidth": 0.7,
+                        },
+                    )
+                    safe_plot(
+                        pts,
+                        ax,
+                        marker=style["marker"],
+                        markersize=30,
+                        facecolor=style.get("facecolor", "none"),
+                        edgecolor=style.get("edgecolor", "#666666"),
+                        linewidth=style.get("linewidth", 0.7),
+                        label=_label_once(style["label"]),
+                        zorder=5,
+                    )
+
+        ax.set_aspect("equal")
+        ax.axis("off")
+        # --- scale bar + north arrow ---
+        add_scalebar(ax)
+        add_north_arrow(ax)
+        spec = {**spec, "legend_title": "Slope gradient"}
+        _merge_and_draw_legend(ax, spec, legend_raster_handles)
+
+        output_filename = (
+            f"exposure_map_{hazard_name}_{suffix}.png"
+            if suffix
+            else f"exposure_map_{hazard_name}.png"
+        )
+        output_path = os.path.join(output_dir, output_filename)
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=resolution, bbox_inches="tight")
+        plt.show()
+        plt.close()
+        return  # don't run exposure logic below
+
+    # ---------- EXPOSURE VECTORS (all other hazards) ----------
+
     # Lines (NOT exposed)
-    if (lines is not None) and (len(lines) > 0) and ("infra_type" in lines.columns) and ("exposed" in lines.columns):
+    if (
+        (lines is not None)
+        and (len(lines) > 0)
+        and ("infra_type" in lines.columns)
+        and ("exposed" in lines.columns)
+    ):
         for ln_type in lines["infra_type"].unique():
             lns = lines[lines["infra_type"] == ln_type]
             style = custom_line_styles.get(
-                ln_type, {"color": "gray", "linestyle": "-", "linewidth": 1.5, "label": ln_type}
+                ln_type,
+                {"color": "gray", "linestyle": "-", "linewidth": 1.5, "label": ln_type},
             )
             subset = lns[~lns["exposed"]]
             if len(subset) > 0:
@@ -539,18 +741,31 @@ def plot_and_save_exposure_map(
                     color=style["color"],
                     linestyle=style["linestyle"],
                     linewidth=style["linewidth"],
-                    label=_label_once(f"{style['label']} (not exposed)"),
+                    label=_label_once(f"{style['label']}"),
                     zorder=3,
                 )
 
-    # Points (NOT exposed) — skip towers; hollow subs/transformers
-    if (points is not None) and (len(points) > 0) and ("infra_type" in points.columns) and ("exposed" in points.columns):
+    # Points (NOT exposed)
+    if (
+        (points is not None)
+        and (len(points) > 0)
+        and ("infra_type" in points.columns)
+        and ("exposed" in points.columns)
+    ):
         for pt_type in points["infra_type"].unique():
             if pt_type == "tower":
                 continue
             pts = points[points["infra_type"] == pt_type]
-            style = custom_point_styles.get(pt_type, {"marker": "o", "label": pt_type,
-                                                      "facecolor": "none", "edgecolor": "#666666", "linewidth": 0.7})
+            style = custom_point_styles.get(
+                pt_type,
+                {
+                    "marker": "o",
+                    "label": pt_type,
+                    "facecolor": "none",
+                    "edgecolor": "#666666",
+                    "linewidth": 0.7,
+                },
+            )
             subset = pts[~pts["exposed"]]
             if len(subset) > 0:
                 safe_plot(
@@ -561,16 +776,22 @@ def plot_and_save_exposure_map(
                     facecolor=style.get("facecolor", "none"),
                     edgecolor=style.get("edgecolor", "#666666"),
                     linewidth=style.get("linewidth", 0.7),
-                    label=_label_once(f"{style['label']} (not exposed)"),
+                    label=_label_once(f"{style['label']}"),
                     zorder=5,
                 )
 
     # Lines (EXPOSED)
-    if (lines is not None) and (len(lines) > 0) and ("infra_type" in lines.columns) and ("exposed" in lines.columns):
+    if (
+        (lines is not None)
+        and (len(lines) > 0)
+        and ("infra_type" in lines.columns)
+        and ("exposed" in lines.columns)
+    ):
         for ln_type in lines["infra_type"].unique():
             lns = lines[lines["infra_type"] == ln_type]
             style = custom_line_styles.get(
-                ln_type, {"color": "gray", "linestyle": "-", "linewidth": 1.5, "label": ln_type}
+                ln_type,
+                {"color": "gray", "linestyle": "-", "linewidth": 1.5, "label": ln_type},
             )
             subset = lns[lns["exposed"]]
             if len(subset) > 0:
@@ -584,14 +805,27 @@ def plot_and_save_exposure_map(
                     zorder=4,
                 )
 
-    # Points (EXPOSED) — skip towers; hollow subs/transformers with red outline
-    if (points is not None) and (len(points) > 0) and ("infra_type" in points.columns) and ("exposed" in points.columns):
+    # Points (EXPOSED)
+    if (
+        (points is not None)
+        and (len(points) > 0)
+        and ("infra_type" in points.columns)
+        and ("exposed" in points.columns)
+    ):
         for pt_type in points["infra_type"].unique():
             if pt_type == "tower":
                 continue
             pts = points[points["infra_type"] == pt_type]
-            style = custom_point_styles.get(pt_type, {"marker": "o", "label": pt_type,
-                                                      "facecolor": "none", "edgecolor": "#666666", "linewidth": 0.7})
+            style = custom_point_styles.get(
+                pt_type,
+                {
+                    "marker": "o",
+                    "label": pt_type,
+                    "facecolor": "none",
+                    "edgecolor": "#666666",
+                    "linewidth": 0.7,
+                },
+            )
             subset = pts[pts["exposed"]]
             if len(subset) > 0:
                 safe_plot(
@@ -600,7 +834,7 @@ def plot_and_save_exposure_map(
                     marker=style["marker"],
                     markersize=30,
                     facecolor="none",
-                    edgecolor="red",          # red outline when exposed
+                    edgecolor="red",
                     linewidth=style.get("linewidth", 0.7),
                     label=_label_once(f"{style['label']} (exposed)"),
                     zorder=6,
@@ -608,15 +842,27 @@ def plot_and_save_exposure_map(
 
     ax.set_aspect("equal")
     ax.axis("off")
-
+    
+    # --- scale bar + north arrow ---
+    add_scalebar(ax)
+   
+    
     _merge_and_draw_legend(ax, spec, legend_raster_handles)
 
-    output_filename = f"exposure_map_{hazard_name}_{suffix}.png" if suffix else f"exposure_map_{hazard_name}.png"
+    output_filename = (
+        f"exposure_map_{hazard_name}_{suffix}.png"
+        if suffix
+        else f"exposure_map_{hazard_name}.png"
+    )
     output_path = os.path.join(output_dir, output_filename)
     plt.tight_layout()
+    add_north_arrow(ax)
     plt.savefig(output_path, dpi=resolution, bbox_inches="tight")
     plt.show()
     plt.close()
+
+
+
 
 def plot_initial_map(aoi, points, lines, output_path=None):
     """
@@ -643,8 +889,11 @@ def plot_initial_map(aoi, points, lines, output_path=None):
         print(f"[!] Could not add basemap: {e}")
 
     ax.axis('off')
+    # --- scale bar + north arrow ---
+    add_scalebar(ax)
+    
     ax.legend()
-
+    add_north_arrow(ax)
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
     else:
@@ -670,6 +919,12 @@ def plot_initial_map_by_type(
         with rasterio.open(raster_path) as src:
             current_crs = src.crs
             nodata_val = src.nodata
+
+            # SAFETY: if raster CRS is missing, fallback to AOI CRS (or EPSG:4326)
+            if current_crs is None:
+                current_crs = aoi.crs
+                if current_crs is None:
+                    current_crs = CRS.from_epsg(4326)
             aoi_proj = aoi.to_crs(current_crs)
             geoms = [f["geometry"] for f in aoi_proj.__geo_interface__["features"]]
             masked_arr, transform = mask(src, geoms, crop=True, filled=False)
@@ -733,6 +988,29 @@ def plot_initial_map_by_type(
             legend_raster_handles = build_raster_legend_handles(
                 spec, data_masked=masked, vmin=vmin, vmax=vmax
             )
+
+        elif hazard_name == "wildfire" and spec.get("type") == "continuous":
+            # Wildfire heatmap: hide background (zeros / masked) so it reads as a heatmap
+            masked2 = np.ma.masked_where((masked.mask) | (masked <= 0), masked)
+            if masked2.count() > 0:
+                vmin, vmax = float(masked2.min()), float(masked2.max())
+            else:
+                vmin, vmax = 0.0, 1.0
+
+            cmap = plt.get_cmap(spec.get("cmap", "Reds")).copy()
+            cmap.set_bad(alpha=0)
+
+            ax.imshow(
+                masked2, cmap=cmap,
+                extent=(rxmin, rxmax, rymin, rymax),
+                vmin=vmin, vmax=vmax,
+                origin="upper", alpha=0.9, zorder=1
+            )
+            legend_raster_handles = build_raster_legend_handles(
+                spec, data_masked=masked2, vmin=vmin, vmax=vmax
+            )
+            spec = {**spec, "legend_title": "Wildfire"}
+
         else:
             if spec["type"] == "continuous":
                 vmin, vmax = float(masked.min()), float(masked.max())
@@ -789,7 +1067,11 @@ def plot_initial_map_by_type(
         except Exception as e:
             print(f"[!] Could not load basemap: {e}")
 
-    aoi_to_plot = aoi if aoi.crs == current_crs else aoi.to_crs(current_crs)
+    try:
+        aoi_to_plot = aoi if aoi.crs == current_crs else aoi.to_crs(current_crs)
+    except Exception as e:
+        print(f"[WARN] AOI reprojection failed (using AOI CRS as-is): {e}")
+        aoi_to_plot = aoi
     aoi_to_plot.boundary.plot(ax=ax, color="black", linewidth=1, label="_nolegend_", zorder=2)
 
     # Hollow styles & tower removal
@@ -802,8 +1084,8 @@ def plot_initial_map_by_type(
                      "facecolor": "none", "edgecolor": "#1f78b4", "linewidth": 0.9},
     }
     custom_line_styles = {
-        "hv": {"color": "yellow", "linestyle": "-", "linewidth": 2.5, "label": "High transmission line"},
-        "lv": {"color": "#970499", "linestyle": "-", "linewidth": 1.5, "label": "Low transmission line"},
+        "hv": {"color": "yellow", "linestyle": "-", "linewidth": 2.5, "label": "HV line"},
+        "lv": {"color": "#970499", "linestyle": "-", "linewidth": 1.5, "label": "LV line"},
         "existing": {"color": "black", "linestyle": "--", "linewidth": 1.5, "label": "Existing line"},
     }
 
@@ -845,6 +1127,9 @@ def plot_initial_map_by_type(
         )
 
     ax.set_axis_off()
+    # --- scale bar + north arrow ---
+    add_scalebar(ax)
+    add_north_arrow(ax)
     if spec is not None:
         _merge_and_draw_legend(ax, spec, legend_raster_handles)
     else:
@@ -857,54 +1142,115 @@ def plot_initial_map_by_type(
 
 def add_scalebar(ax, *, loc='lower left', pad=0.4, borderpad=0.5, sep=5, length_km=None):
     """
-    Add a scale bar (metric) to the map. Assumes axis is in meters.
-    """
-    x0, x1 = ax.get_xlim()
-    width_m = abs(x1 - x0)
-    if length_km is None:
-        raw = width_m / 5.0
-        nice_steps = [1, 2, 5]
-        pow10 = 10 ** int(np.floor(np.log10(raw)))
-        best = min(nice_steps, key=lambda s: abs(raw - s * pow10))
-        length_m = best * pow10
-    else:
-        length_m = float(length_km) * 1000.0
-    if length_m >= 1000:
-        label = f"{length_m/1000:.0f} km" if (length_m/1000) >= 1 else f"{length_m/1000:.1f} km"
-    else:
-        label = f"{length_m:.0f} m"
-    fontprops = fm.FontProperties(size=9)
-    scalebar = AnchoredSizeBar(
-        ax.transData,
-        length_m, label, loc,
-        pad=pad, borderpad=borderpad, sep=sep,
-        frameon=True, size_vertical=length_m * 0.02, fontproperties=fontprops
-    )
-    ax.add_artist(scalebar)
+    Add a scale bar to the map.
 
-def add_north_arrow(ax, *, loc='upper left', size=0.08, pad=0.02):
+    - If the axis is in a projected CRS (meters, e.g. EPSG:3857/UTM),
+      it behaves normally (units = meters).
+    - If the axis appears to be geographic (degrees lon/lat),
+      it computes a correct scale bar in kilometers using geodesic distance.
+
+    Design:
+    - no surrounding frame
+    - thin bar
+    - clean, publication-ready
     """
-    Add a simple North arrow to the map.
-    """
+    from pyproj import Geod
+    import numpy as np
+    import matplotlib.font_manager as fm
+    from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
+
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
-    dx = x1 - x0
-    dy = y1 - y0
-    if loc == 'upper left':
-        x = x0 + dx * (0.08 + pad)
-        y = y1 - dy * (0.08 + pad)
-    elif loc == 'upper right':
-        x = x1 - dx * (0.08 + pad)
-        y = y1 - dy * (0.08 + pad)
-    elif loc == 'lower left':
-        x = x0 + dx * (0.08 + pad)
-        y = y0 + dy * (0.08 + pad)
-    else:
-        x = x1 - dx * (0.08 + pad)
-        y = y0 + dy * (0.08 + pad)
-    L = dy * size
-    ax.annotate(
-        '', xy=(x, y + L), xytext=(x, y),
-        arrowprops=dict(arrowstyle='-|>', linewidth=1.5)
+
+    # Detect if coordinates look like lon/lat
+    is_geographic = (
+        -180 <= x0 <= 180 and -180 <= x1 <= 180 and
+        -90 <= y0 <= 90 and -90 <= y1 <= 90
     )
-    ax.text(x, y + L + dy * 0.02, 'N', ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+    if is_geographic:
+        # ---- Geographic CRS (degrees) ----
+        geod = Geod(ellps="WGS84")
+        mid_lat = 0.5 * (y0 + y1)
+
+        # Total horizontal distance of map (meters)
+        _, _, total_m = geod.inv(x0, mid_lat, x1, mid_lat)
+
+        # Choose a "nice" length
+        if length_km is None:
+            raw = total_m / 5.0
+            nice_steps = [1, 2, 5]
+            pow10 = 10 ** int(np.floor(np.log10(raw)))
+            best = min(nice_steps, key=lambda s: abs(raw - s * pow10))
+            length_m = best * pow10
+        else:
+            length_m = float(length_km) * 1000.0
+
+        # Convert meters to degrees (longitude)
+        lon2, _, _ = geod.fwd(x0, mid_lat, 90, length_m)
+        length_data = lon2 - x0
+
+        # Thin vertical thickness (in degrees)
+        size_vertical = 0.006 * (y1 - y0)
+
+    else:
+        # ---- Projected CRS (meters) ----
+        width_m = abs(x1 - x0)
+
+        if length_km is None:
+            raw = width_m / 5.0
+            nice_steps = [1, 2, 5]
+            pow10 = 10 ** int(np.floor(np.log10(raw)))
+            best = min(nice_steps, key=lambda s: abs(raw - s * pow10))
+            length_m = best * pow10
+        else:
+            length_m = float(length_km) * 1000.0
+
+        length_data = length_m
+        size_vertical = length_m * 0.008  # thinner than default
+
+    # Label formatting
+    if length_m >= 1000:
+        label = f"{length_m/1000:.0f} km"
+    else:
+        label = f"{length_m:.0f} m"
+
+    fontprops = fm.FontProperties(size=8)
+
+    scalebar = AnchoredSizeBar(
+        ax.transData,
+        length_data,
+        label,
+        loc,
+        pad=pad,
+        borderpad=borderpad,
+        sep=sep,
+        frameon=False,          # <-- clean look
+        size_vertical=size_vertical,
+        fontproperties=fontprops
+    )
+
+    ax.add_artist(scalebar)
+
+
+
+def add_north_arrow(ax, x=0.06, y=0.975, size=0.065):
+    """
+    North arrow in AXES coords (0..1), safely inside the frame (bbox-tight proof).
+    """
+    ax.annotate(
+        "N",
+        xy=(x, y),
+        xytext=(x, y - size),
+        xycoords=ax.transAxes,
+        textcoords=ax.transAxes,
+        ha="center",
+        va="bottom",
+        fontsize=12,
+        fontweight="bold",
+        color="black",  
+        arrowprops=dict(arrowstyle="-|>", lw=1.6,color="black",  shrinkA=0, shrinkB=0),
+        zorder=10000,
+        clip_on=False,
+    )
+

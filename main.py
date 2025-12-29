@@ -9,9 +9,9 @@ from typing import Any, Dict, Optional, Tuple, List
 import geopandas as gpd
 import pandas as pd
 from modules.config_utils import load_config
-from modules.crs_utils import harmonize_crs
-from modules.plotting import plot_initial_map_by_type
-from modules.raster_exposure import process_raster_exposures
+from modules.crs_utils import harmonize_crs, assign_or_reproject_to_wgs84
+from modules.plotting import plot_initial_map_by_type, plot_and_save_exposure_map
+from modules.raster_exposure import process_raster_exposures, _build_lowres_raster_for_plot
 from modules.flood_combination import process_combined_flood
 # from modules.drought_module import process_drought
 from modules.heat_module import process_heat
@@ -179,6 +179,35 @@ def run_multi_hazard_pipeline(config_path: str):
         lines_by_type=lines_by_type,
         output_path=os.path.join(config["output_dir"], "initial_context_map.png")
     )
+
+        # Optional DEM context map
+    dem_cfg = (config.get("dem") or {})
+    dem_path = dem_cfg.get("input")
+
+    if dem_path:
+        print(f"[INFO] DEM path found in config: {dem_path}. Generating DEM map...")
+
+        # 1) Ensure DEM is in WGS84 (same as for other rasters)
+        dem_path_wgs84 = assign_or_reproject_to_wgs84(dem_path)
+
+        # 2) Build a low-resolution DEM clipped to the AOI for plotting
+        dem_plot_raster = _build_lowres_raster_for_plot(
+            raster_path_wgs84=dem_path_wgs84,
+            aoi=aoi,
+            out_dir=config["output_dir"],
+            hazard_name="dem",
+        )
+
+        # 3) Plot DEM + same context as the initial map (AOI + infra)
+        plot_and_save_exposure_map(
+            aoi=aoi,
+            points=all_points,
+            lines=all_lines,
+            hazard_name="dem",
+            output_dir=config["output_dir"],
+            raster_path=dem_plot_raster,
+        )
+
 
     # Non-raster overlays if active
     if _is_active(config, "heat"):

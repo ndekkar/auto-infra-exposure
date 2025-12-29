@@ -1,10 +1,10 @@
 """
-Wildfire processing: build a raster from burned-area centroids and plot
+Wildfire processing: build a HEATMAP raster from burned-area centroids and plot
 ONE map with the raster underlay + energy network by type.
 
 Behavior:
 - Extract centroids within AOI (from GlobFire polygons)
-- Rasterize centroids to a TIF
+- Rasterize centroids to a HEATMAP TIF (density + Gaussian smoothing)
 - Plot a single map: wildfire TIF + network (points/lines by type) + basemap
 """
 
@@ -12,6 +12,7 @@ import os
 from typing import Dict, Optional
 
 import geopandas as gpd
+import numpy as np
 from shapely.geometry import Point
 
 from modules.plotting import plot_initial_map_by_type
@@ -23,7 +24,7 @@ from modules.plotting import plot_initial_map_by_type
 def process_wildfire(config) -> Optional[str]:
     """
     Main entry point for wildfire.
-    - Builds wildfire centroids (GPKG) and a raster (TIF)
+    - Builds wildfire centroids (GPKG) and a HEATMAP raster (TIF)
     - Plots a single map with the raster + network by type
     - Returns the raster path (or None on failure)
     """
@@ -37,8 +38,12 @@ def process_wildfire(config) -> Optional[str]:
 
     aoi_path = config["aoi"]
     gpkg_centroids = os.path.join(out_dir, "wildfire_centroids.gpkg")
-    tif_raster = os.path.join(out_dir, "wildfire_centroids.tif")
+    tif_raster = os.path.join(out_dir, "wildfire_heatmap.tif")
     png_map = os.path.join(out_dir, "wildfire_w_network.png")
+
+    # Optional tuning (no YAML change required; defaults used if not present)
+    sigma_px = wf.get("sigma_px", 3)          # smoothing strength in pixels
+    normalize = wf.get("normalize", True)     # normalize 0..1
 
     # 1) Extract centroids in AOI
     try:
@@ -51,9 +56,15 @@ def process_wildfire(config) -> Optional[str]:
         print(f"[ERROR] Wildfire centroids failed: {e}")
         return None
 
-    # 2) Rasterize centroids → TIF
+    # 2) Rasterize centroids → HEATMAP TIF
     try:
-        rasterize_fire_centroids(gpkg_centroids, tif_raster, resolution=0.01)
+        rasterize_fire_centroids(
+            gpkg_centroids,
+            tif_raster,
+            resolution=wf.get("resolution", 0.01),
+            sigma_px=sigma_px,
+            normalize=normalize,
+        )
     except Exception as e:
         print(f"[ERROR] Wildfire rasterization failed: {e}")
         return None
@@ -64,7 +75,7 @@ def process_wildfire(config) -> Optional[str]:
         aoi_gdf = aoi_gdf.to_crs(aoi_gdf.crs or "EPSG:3857")  # ensure CRS set
 
         points_by_type = config.get("_points_by_type")
-        lines_by_type  = config.get("_lines_by_type")
+        lines_by_type = config.get("_lines_by_type")
 
         # Fallback: rebuild dicts from configured inputs if cache not present
         if not points_by_type or not lines_by_type:
@@ -73,7 +84,8 @@ def process_wildfire(config) -> Optional[str]:
         # Reproject network dicts to AOI CRS (critical for display)
         target_crs = aoi_gdf.crs
         points_by_type = _reproj_dict(points_by_type, target_crs)
-        lines_by_type  = _reproj_dict(lines_by_type, target_crs)
+        lines_by_type = _reproj_dict(lines_by_type, target_crs)
+
     except Exception as e:
         print(f"[WARN] Wildfire: could not prep network dicts: {e}")
         points_by_type, lines_by_type = {}, {}
@@ -185,17 +197,23 @@ def extract_burned_area_centroids(aoi_path, globfire_dir, output_path):
     out_gdf.to_file(output_path, driver="GPKG", layer="burned_area_centroids")
 
 
-def rasterize_fire_centroids(gpkg_path, output_tif_path, resolution=0.01):
+def rasterize_fire_centroids(gpkg_path, output_tif_path, resolution=0.01, sigma_px=3, normalize=True):
     """
-    Rasterize centroid points (1 = burned, 0 = background) at a given degree resolution.
+    Build a wildfire HEATMAP from centroid points:
+    - count points per pixel
+    - apply Gaussian smoothing (sigma_px)
+    - optionally normalize to 0..1
+
+    Notes:
+    - `resolution` is in degrees (EPSG:4326). Keep consistent with your other hazards.
+    - `sigma_px` is smoothing in pixels (e.g., 2..8 depending on how "spread" you want the heat).
     """
     import rasterio
-    from rasterio.features import rasterize
-    from rasterio.transform import from_origin
+    from rasterio.transform import from_origin, rowcol
+    from scipy.ndimage import gaussian_filter
 
     gdf = gpd.read_file(gpkg_path, layer="burned_area_centroids").to_crs("EPSG:4326")
     if gdf.empty:
-        # write an empty raster with tiny extent to avoid crashes (optional)
         raise ValueError("No wildfire centroids to rasterize.")
 
     minx, miny, maxx, maxy = gdf.total_bounds
@@ -203,29 +221,48 @@ def rasterize_fire_centroids(gpkg_path, output_tif_path, resolution=0.01):
     height = max(1, int((maxy - miny) / resolution))
     transform = from_origin(minx, maxy, resolution, resolution)
 
-    shapes = [(geom, 1) for geom in gdf.geometry if geom and not geom.is_empty]
-    if not shapes:
-        raise ValueError("No valid centroid geometries to rasterize.")
+    # ---- 1) Count points per pixel (density grid) ----
+    xs = gdf.geometry.x.values
+    ys = gdf.geometry.y.values
+    rows, cols = rowcol(transform, xs, ys)
 
-    arr = rasterize(
-        shapes,
-        out_shape=(height, width),
-        transform=transform,
-        fill=0,
-        dtype="uint8"
-    )
+    arr = np.zeros((height, width), dtype=np.float32)
 
+    # Keep only points falling inside raster bounds
+    rows = np.asarray(rows)
+    cols = np.asarray(cols)
+    m = (rows >= 0) & (rows < height) & (cols >= 0) & (cols < width)
+    rows = rows[m]
+    cols = cols[m]
+
+    if len(rows) == 0:
+        raise ValueError("All wildfire centroids fall outside raster bounds.")
+
+    np.add.at(arr, (rows, cols), 1.0)
+
+    # ---- 2) Smooth to create heatmap ----
+    if sigma_px and sigma_px > 0:
+        arr = gaussian_filter(arr, sigma=float(sigma_px))
+
+    # ---- 3) Normalize (optional) ----
+    if normalize:
+        vmax = float(arr.max())
+        if vmax > 0:
+            arr = arr / vmax
+
+    # ---- 4) Write as float32 GeoTIFF ----
     with rasterio.open(
         output_tif_path, "w",
         driver="GTiff",
         height=height,
         width=width,
         count=1,
-        dtype="uint8",
+        dtype="float32",
+        nodata=0.0,
         crs="EPSG:4326",
         transform=transform,
         compress="LZW"
     ) as dst:
-        dst.write(arr, 1)
+        dst.write(arr.astype(np.float32), 1)
 
     return output_tif_path
