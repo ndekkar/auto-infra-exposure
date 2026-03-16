@@ -17,6 +17,8 @@ from modules.flood_combination import process_combined_flood
 from modules.heat_module import process_heat
 from modules.wildfire_module import process_wildfire
 from modules.cold_module import process_cold
+from modules.ice_module import process_ice
+from modules.wind_module import process_wind
 from modules.stats import (
     compute_infra_stats_from_results,
     compute_infra_stats_from_overlay,
@@ -165,14 +167,15 @@ def run_multi_hazard_pipeline(config_path: str):
         gdf = gdf[gdf.geometry.intersects(aoi_union)]
         gdf["type"] = name
         lines_by_type[name] = gdf
-    
+
     config["_points_by_type"] = points_by_type
     config["_lines_by_type"]  = lines_by_type
+
     # Union layers
     all_points = gpd.GeoDataFrame(pd.concat(points_by_type.values(), ignore_index=True), crs=aoi.crs) if points_by_type else None
     all_lines  = gpd.GeoDataFrame(pd.concat(lines_by_type.values(),  ignore_index=True), crs=aoi.crs) if lines_by_type else None
 
-    # Map
+    # Initial context map
     plot_initial_map_by_type(
         aoi,
         points_by_type=points_by_type,
@@ -180,25 +183,19 @@ def run_multi_hazard_pipeline(config_path: str):
         output_path=os.path.join(config["output_dir"], "initial_context_map.png")
     )
 
-        # Optional DEM context map
+    # Optional DEM context map
     dem_cfg = (config.get("dem") or {})
     dem_path = dem_cfg.get("input")
 
     if dem_path:
         print(f"[INFO] DEM path found in config: {dem_path}. Generating DEM map...")
-
-        # 1) Ensure DEM is in WGS84 (same as for other rasters)
         dem_path_wgs84 = assign_or_reproject_to_wgs84(dem_path)
-
-        # 2) Build a low-resolution DEM clipped to the AOI for plotting
         dem_plot_raster = _build_lowres_raster_for_plot(
             raster_path_wgs84=dem_path_wgs84,
             aoi=aoi,
             out_dir=config["output_dir"],
             hazard_name="dem",
         )
-
-        # 3) Plot DEM + same context as the initial map (AOI + infra)
         plot_and_save_exposure_map(
             aoi=aoi,
             points=all_points,
@@ -208,8 +205,10 @@ def run_multi_hazard_pipeline(config_path: str):
             raster_path=dem_plot_raster,
         )
 
+    # ------------------------------------------------------------------
+    # Non-raster overlay hazards
+    # ------------------------------------------------------------------
 
-    # Non-raster overlays if active
     if _is_active(config, "heat"):
         heat_raster_path = process_heat(config)
         if heat_raster_path and Path(heat_raster_path).exists():
@@ -224,7 +223,7 @@ def run_multi_hazard_pipeline(config_path: str):
                 out_root=os.path.join(config["output_dir"], "stats")
             )
             config["hazards"]["heat"]["input"] = str(heat_raster_path)
-    
+
     if _is_active(config, "wildfire"):
         wildfire_raster_path = process_wildfire(config)
         if wildfire_raster_path and Path(wildfire_raster_path).exists():
@@ -239,10 +238,8 @@ def run_multi_hazard_pipeline(config_path: str):
                 out_root=os.path.join(config["output_dir"], "stats")
             )
 
-
-       
     if _is_active(config, "cold"):
-        cold_outputs = process_cold(config)  
+        cold_outputs = process_cold(config)
         cold_raster_path = (config.get("hazards", {}).get("cold", {}) or {}).get("input")
         if cold_raster_path and Path(cold_raster_path).exists():
             compute_infra_stats_from_overlay(
@@ -255,7 +252,41 @@ def run_multi_hazard_pipeline(config_path: str):
                 lines_by_type=lines_by_type,
                 out_root=os.path.join(config["output_dir"], "stats")
             )
-    
+
+    if _is_active(config, "ice"):
+        print("\n--- Processing hazard: ice ---")
+        ice_outputs = process_ice(config)
+        ice_raster_path = ice_outputs.get("primary_raster")
+        if ice_raster_path and Path(ice_raster_path).exists():
+            compute_infra_stats_from_overlay(
+                hazard_name="ice",
+                raster_path=ice_raster_path,
+                aoi_gdf=aoi,
+                all_points_gdf=all_points,
+                all_lines_gdf=all_lines,
+                points_by_type=points_by_type,
+                lines_by_type=lines_by_type,
+                out_root=os.path.join(config["output_dir"], "stats")
+            )
+        else:
+            print("[WARN] ice: primary raster not found, stats skipped.")
+
+
+    if _is_active(config, "wind"):
+        print("\n--- Processing hazard: wind ---")
+        wind_outputs = process_wind(config)
+        wind_raster_path = wind_outputs.get("primary_raster")
+        if wind_raster_path and Path(wind_raster_path).exists():
+            compute_infra_stats_from_overlay(
+                hazard_name="wind",
+                raster_path=wind_raster_path,
+                aoi_gdf=aoi, all_points_gdf=all_points, all_lines_gdf=all_lines,
+                points_by_type=points_by_type, lines_by_type=lines_by_type,
+                out_root=os.path.join(config["output_dir"], "stats")
+            )
+        else:
+            print("[WARN] wind: primary raster not found, stats skipped.")
+
     if _is_active(config, "earthquake"):
         eq_path = (config.get("hazards", {}).get("earthquake", {}) or {}).get("input")
         if eq_path and Path(eq_path).exists():
@@ -270,7 +301,9 @@ def run_multi_hazard_pipeline(config_path: str):
                 out_root=os.path.join(config["output_dir"], "stats")
             )
 
-    # Raster exposure hazards
+    # ------------------------------------------------------------------
+    # Raster exposure hazards (flood, landslide)
+    # ------------------------------------------------------------------
     sample_points_per_line = 10
     hazard_results = process_raster_exposures(
         config=config,
@@ -299,14 +332,12 @@ def run_multi_hazard_pipeline(config_path: str):
 
     # Combined flood (requires active pluvial + fluvial)
     if _is_active(config, "pluvial_flood") and _is_active(config, "fluvial_flood"):
-        # Build dict {hz: (raster_path, threshold)} robustly from hazard_results or config
         combined_inputs: Dict[str, Tuple[str, Optional[float]]] = {}
         for hz in ("pluvial_flood", "fluvial_flood"):
             rp, th = (None, None)
             if isinstance(hazard_results, dict) and hz in hazard_results:
                 rp, th = _extract_raster_threshold(hazard_results[hz])
             if not rp:
-                # fallback to config input
                 rp = (config.get("hazards", {}).get(hz, {}) or {}).get("input")
                 th = (config.get("hazards", {}).get(hz, {}) or {}).get("threshold")
             if rp and Path(str(rp)).exists():
@@ -322,7 +353,6 @@ def run_multi_hazard_pipeline(config_path: str):
                 sample_points_per_line=sample_points_per_line
             )
 
-            # Try stats from shapefiles written by the combined module
             outdir = Path(config["output_dir"])
             c_pts = _read_if_exists(outdir / "points_exposure_combined_flood.shp")
             c_lin = _read_if_exists(outdir / "lines_exposure_combined_flood.shp")
@@ -337,7 +367,6 @@ def run_multi_hazard_pipeline(config_path: str):
                 )
                 print("[INFO] Stats written for combined_flood (from shapefiles).")
             else:
-                # Try to pull a raster path from the combined output for overlay fallback
                 c_raster = None
                 if isinstance(combined_output, dict):
                     cobj = combined_output.get("combined_flood") if "combined_flood" in combined_output else combined_output
@@ -362,6 +391,7 @@ def run_multi_hazard_pipeline(config_path: str):
             print("[WARN] Combined flood skipped: missing pluvial/fluvial raster inputs.")
     else:
         print("[INFO] Combined flood requires pluvial_flood AND fluvial_flood active; skipped.")
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

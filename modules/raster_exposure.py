@@ -290,7 +290,7 @@ def process_raster_exposures(
         # Skip inactive hazards and those handled by overlay modules elsewhere
         if not hazard_conf.get("active", False):
             continue
-        if hazard_name in ["drought", "wildfire"]:
+        if hazard_name in ["drought", "wildfire", "ice", "wind"]:
             # These hazards are handled by dedicated modules; we don't compute exposure here.
             continue
 
