@@ -114,26 +114,6 @@ def get_hazard_display_spec(hazard_name: str):
             "labels": ["Very low", "Low", "Medium", "High", "Very high"],
     }
 
-    elif hn == "ice":
-        return {
-            "type": "discrete",
-            "palette": ["#c6dbef", "#6baed6", "#2171b5", "#08306b"],
-            "breaks": [1, 2, 3, 4, 5],
-            "labels": ["Low (< 79 days)", "Medium (79–130 days)", "High (130–173 days)", "Extreme (> 173 days)"],
-            "label": "Ice",
-            "legend_title": "Ice Hazard (Freeze Days/year)",
-        }
-
-    elif hn == "wind":
-        return {
-            "type": "discrete",
-            "palette": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"],
-            "breaks": [1, 2, 3, 4, 5],
-            "labels": ["Low (< 14 m/s)", "Medium (14–17 m/s)", "High (17–20 m/s)", "Extreme (> 20 m/s)"],
-            "label": "Wind",
-            "legend_title": "Wind Hazard (Max Wind Speed)",
-        }
-
     # ----- DEFAULT / UNKNOWN -----
     return {
         "type": "continuous",

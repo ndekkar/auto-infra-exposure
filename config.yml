@@ -4,7 +4,6 @@
 aoi: "../data/tajik/aoi.shp"
 
 dem:
-#   input: "../data/tajik/dem_tjk.tif"
   input: null
 
 # Path to infrastructure 
@@ -22,7 +21,7 @@ infrastructure_inputs:
 
 
 # Directory where all outputs will be saved
-output_dir: "../data/resultwind"
+output_dir: "../data/taj"
 
 
 # === Hazard Layers Configuration ===
@@ -62,23 +61,22 @@ hazards:
     active: false
     input: "../data/hazards/cold/TNn_mean_2010_2024.tif"
     threshold: -20
-    fd_input: "../data/hazards/cold/FD_mean_2010_2024_TAJ.tif"   # <- optionnel
-  
+
+
   ice:
-    active: false
+    active: true
     input: "../data/era5/ice/indicators/era5_ice_indicators_TJK.nc"
-    # Thresholds above which infrastructure is considered exposed per indicator
     thresholds:
-      freeze_days: 60          # days/year with at least one sub-zero timestep
-      freeze_thaw_cycles: 20   # days/year where temperature crosses 0°C within the day
-      freezing_rain_days: 10   # days/year with simultaneous precipitation and sub-zero temp
-      cold_spell_duration: 14  # maximum consecutive freeze days per year
+      freeze_days: 60
+      freeze_thaw_cycles: 20
+      freezing_rain_days: 10
+      cold_spell_duration: 14
   
   wind:
     active: true
     input: "../data/era5/wind/indicators/era5_wind_indicators_TJK.nc"
     thresholds:
-      max_wind_speed: 20    # m/s at 100m — design wind speed for standard towers
-      mean_wind_speed: 8    # m/s at 100m — fatigue load threshold
-      high_wind_days: 30    # days/year with ws10 > 15 m/s
-      storm_days: 5         # days/year with ws100 > 25 m/s
+      max_wind_speed: 20
+      mean_wind_speed: 8
+      high_wind_days: 30
+      storm_days: 5

@@ -88,39 +88,6 @@ def _classify_cold_degC(masked_temp: np.ma.MaskedArray) -> np.ndarray:
     classes[np.isnan(arr)] = 0
     return classes
 
-# ---- Ice (freeze days/year) — calibrated on 5 Central Asian countries (p25/p50/p75) ----
-ICE_NAMES  = {"ice"}
-ICE_BREAKS = [-float("inf"), 79.0, 130.0, 173.0, float("inf")]
-ICE_LABELS = ["Low (< 79 days)", "Medium (79–130 days)", "High (130–173 days)", "Extreme (> 173 days)"]
-ICE_COLORS = [
-    "#c6dbef",  # Low
-    "#6baed6",  # Medium
-    "#2171b5",  # High
-    "#08306b",  # Extreme
-]
-def _classify_ice(masked_arr: np.ma.MaskedArray) -> np.ndarray:
-    arr = masked_arr.filled(np.nan).astype(float)
-    classes = np.digitize(arr, ICE_BREAKS, right=False)
-    classes[np.isnan(arr)] = 0
-    return classes
-
-# ---- Wind (max wind speed m/s) — calibrated on 5 Central Asian countries
-#      p25=14, p50=17, Extreme >= 20 m/s (IEC 60826 design wind speed threshold) ----
-WIND_NAMES  = {"wind"}
-WIND_BREAKS = [-float("inf"), 14.0, 17.0, 20.0, float("inf")]
-WIND_LABELS = ["Low (< 14 m/s)", "Medium (14–17 m/s)", "High (17–20 m/s)", "Extreme (> 20 m/s)"]
-WIND_COLORS = [
-    "#ffffcc",  # Low
-    "#a1dab4",  # Medium
-    "#41b6c4",  # High
-    "#225ea8",  # Extreme
-]
-def _classify_wind(masked_arr: np.ma.MaskedArray) -> np.ndarray:
-    arr = masked_arr.filled(np.nan).astype(float)
-    classes = np.digitize(arr, WIND_BREAKS, right=False)
-    classes[np.isnan(arr)] = 0
-    return classes
-
 def classify_flood_depth_array(depth_array: np.ndarray, nodata_value: float | int | None) -> np.ndarray:
     arr = depth_array.astype(float).copy()
     if nodata_value is not None:
@@ -314,26 +281,6 @@ def add_raster_to_ax(ax, raster_path, aoi, hazard_name):
         ax.imshow(classes, cmap=cmap, norm=norm, extent=extent, origin="upper", alpha=0.9)
         legend_handles = [Patch(facecolor=COLD_COLORS[i], label=COLD_LABELS[i]) for i in range(len(COLD_COLORS))]
         _merge_and_draw_legend(ax, {"legend_title": "Cold (cold extreme, °C)"}, legend_handles)
-        return extent
-
-    # Ice: discrete bands
-    if hazard_name in ICE_NAMES:
-        classes = _classify_ice(masked)
-        cmap = ListedColormap(["none"] + ICE_COLORS)
-        norm = BoundaryNorm(range(0, len(ICE_COLORS)+1), len(ICE_COLORS)+1)
-        ax.imshow(classes, cmap=cmap, norm=norm, extent=extent, origin="upper", alpha=0.9)
-        legend_handles = [Patch(facecolor=ICE_COLORS[i], label=ICE_LABELS[i]) for i in range(len(ICE_COLORS))]
-        _merge_and_draw_legend(ax, {"legend_title": "Ice Hazard (Freeze Days/year)"}, legend_handles)
-        return extent
-
-    # Wind: discrete bands
-    if hazard_name in WIND_NAMES:
-        classes = _classify_wind(masked)
-        cmap = ListedColormap(["none"] + WIND_COLORS)
-        norm = BoundaryNorm(range(0, len(WIND_COLORS)+1), len(WIND_COLORS)+1)
-        ax.imshow(classes, cmap=cmap, norm=norm, extent=extent, origin="upper", alpha=0.9)
-        legend_handles = [Patch(facecolor=WIND_COLORS[i], label=WIND_LABELS[i]) for i in range(len(WIND_COLORS))]
-        _merge_and_draw_legend(ax, {"legend_title": "Wind Hazard (Max Wind Speed)"}, legend_handles)
         return extent
 
     # Landslide: continuous raster but legend merged as 5 bins (no side colorbar)
@@ -546,44 +493,6 @@ def plot_and_save_exposure_map(
             legend_raster_handles = [
                 Patch(facecolor=COLD_COLORS[i], label=COLD_LABELS[i])
                 for i in range(len(COLD_COLORS))
-            ]
-
-        # ICE
-        elif hazard_name in ICE_NAMES:
-            classes = _classify_ice(masked)
-            cmap = ListedColormap(["none"] + ICE_COLORS)
-            norm = BoundaryNorm(range(0, len(ICE_COLORS) + 1), len(ICE_COLORS) + 1)
-            ax.imshow(
-                classes,
-                cmap=cmap,
-                norm=norm,
-                extent=(xmin, xmax, ymin, ymax),
-                origin="upper",
-                alpha=0.9,
-                zorder=1,
-            )
-            legend_raster_handles = [
-                Patch(facecolor=ICE_COLORS[i], label=ICE_LABELS[i])
-                for i in range(len(ICE_COLORS))
-            ]
-
-        # WIND
-        elif hazard_name in WIND_NAMES:
-            classes = _classify_wind(masked)
-            cmap = ListedColormap(["none"] + WIND_COLORS)
-            norm = BoundaryNorm(range(0, len(WIND_COLORS) + 1), len(WIND_COLORS) + 1)
-            ax.imshow(
-                classes,
-                cmap=cmap,
-                norm=norm,
-                extent=(xmin, xmax, ymin, ymax),
-                origin="upper",
-                alpha=0.9,
-                zorder=1,
-            )
-            legend_raster_handles = [
-                Patch(facecolor=WIND_COLORS[i], label=WIND_LABELS[i])
-                for i in range(len(WIND_COLORS))
             ]
 
         # FLOOD

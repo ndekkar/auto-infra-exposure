@@ -258,6 +258,15 @@ def run_multi_hazard_pipeline(config_path: str):
         ice_outputs = process_ice(config)
         ice_raster_path = ice_outputs.get("primary_raster")
         if ice_raster_path and Path(ice_raster_path).exists():
+            from modules.raster_exposure import _clip_and_plot_raster_only
+            _clip_and_plot_raster_only(
+                hazard_name="ice",
+                config=config,
+                aoi=aoi,
+                points_by_type=points_by_type,
+                lines_by_type=lines_by_type,
+                raster_path=ice_raster_path,
+            )
             compute_infra_stats_from_overlay(
                 hazard_name="ice",
                 raster_path=ice_raster_path,
@@ -277,6 +286,15 @@ def run_multi_hazard_pipeline(config_path: str):
         wind_outputs = process_wind(config)
         wind_raster_path = wind_outputs.get("primary_raster")
         if wind_raster_path and Path(wind_raster_path).exists():
+            from modules.raster_exposure import _clip_and_plot_raster_only
+            _clip_and_plot_raster_only(
+                hazard_name="wind",
+                config=config,
+                aoi=aoi,
+                points_by_type=points_by_type,
+                lines_by_type=lines_by_type,
+                raster_path=wind_raster_path,
+            )
             compute_infra_stats_from_overlay(
                 hazard_name="wind",
                 raster_path=wind_raster_path,
